@@ -62,6 +62,21 @@ def join_lobby():
     lobby["scores"][player] = 0
     return jsonify({"message": f"{player} joined lobby {lobby_code}"})
 
+@app.route('/lobby-info', methods=['GET'])
+def lobby_info():
+    lobby_code = request.args.get('lobby')
+    lobby = lobbies.get(lobby_code)
+    if not lobby:
+        return jsonify({"error": "Lobby not found"}), 404
+
+    return jsonify({
+        "players": lobby["players"],
+        "player_count": len(lobby["players"]),
+        "creator": lobby["creator"],
+        "game_started": lobby["game_started"],
+        "lobby_closed": lobby["lobby_closed"]
+    })
+
 
 @app.route('/start-game', methods=['POST'])
 def start_game():
@@ -76,9 +91,11 @@ def start_game():
     # assign imposter
     imposter = random.choice(lobby["players"])
     lobby["imposter"] = imposter
+    
     # assign location to others
     location = random.choice(locations)
     lobby["location"] = location
+    
     roles = {}
     for p in lobby["players"]:
         roles[p] = "Imposter" if p == imposter else location
@@ -92,6 +109,7 @@ def start_game():
         questions = ["Sample question 1", "Sample question 2"]
     random.shuffle(questions)
     lobby["questions"] = questions
+    
     lobby["current_turn_index"] = 0
     lobby["game_started"] = True
     lobby["lobby_closed"] = True
@@ -105,6 +123,7 @@ def start_game():
         "roles": lobby["roles"],
         "location": location
     })
+
 
 @app.route('/get-role', methods=['GET'])
 def get_role():

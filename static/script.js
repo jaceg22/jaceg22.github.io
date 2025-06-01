@@ -4,6 +4,48 @@ let currentLobby = null;
 let playerName = null;
 let pollingInterval = null;
 
+// Poll lobby info every few seconds to update player count and start button visibility
+function pollLobbyInfo() {
+  fetch(`${API}/lobby-info?lobby=${currentLobby}`)
+    .then(res => res.json())
+    .then(data => {
+      if (data.error) {
+        alert(data.error);
+        return;
+      }
+
+      // Show player count
+      document.getElementById("player-count-display").innerText = `Players: ${data.player_count}`;
+
+      // Show start button only if you are the host and game not started
+      const startGameBtn = document.getElementById("start-game-btn");
+      if (playerName === data.creator && !data.game_started) {
+        startGameBtn.style.display = "inline-block";
+      } else {
+        startGameBtn.style.display = "none";
+      }
+
+      // Hide lobby setup when joined
+      document.getElementById("lobby-setup-section").style.display = "none";
+      document.getElementById("lobby-section").style.display = "block";
+
+      // Keep polling every 3 seconds if game not started
+      if (!data.game_started) {
+        setTimeout(pollLobbyInfo, 3000);
+      } else {
+        // Game started, start polling game-specific data or roles
+        startPollingRole();
+      }
+    });
+}
+
+function showLobbyUI() {
+  document.getElementById("lobby-section").style.display = "block";
+  document.getElementById("lobby-setup-section").style.display = "none";
+  document.getElementById("player-count-display").innerText = "Players: 1";
+  pollLobbyInfo();
+}
+
 function createLobby() {
   playerName = document.getElementById("create-player-name").value.trim();
   if (!playerName) {
@@ -26,7 +68,7 @@ function createLobby() {
       alert("Lobby created! Code: " + currentLobby);
       document.getElementById("lobby-code-display").innerText = currentLobby;
       showLobbyUI();
-      startPollingRole();
+      // Removed startPollingRole here to avoid conflict, polling starts inside pollLobbyInfo()
     });
 }
 
@@ -51,15 +93,16 @@ function joinLobby() {
       alert(data.message);
       document.getElementById("lobby-code-display").innerText = currentLobby;
       showLobbyUI();
-      startPollingRole();
+      // Removed startPollingRole here to avoid conflict, polling starts inside pollLobbyInfo()
     });
 }
 
+// Modified startGame() to send player name (host) in request body
 function startGame() {
   fetch(`${API}/start-game`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ lobby_code: currentLobby })
+    body: JSON.stringify({ lobby_code: currentLobby, player: playerName })
   })
     .then(res => res.json())
     .then(data => {
@@ -136,9 +179,4 @@ function guessLocation() {
       alert(data.message);
       getRoleAndUpdateUI();
     });
-}
-
-function showLobbyUI() {
-  document.getElementById("lobby-section").style.display = "block";
-  document.getElementById("lobby-setup-section").style.display = "none";
 }
