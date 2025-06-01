@@ -1,11 +1,21 @@
-const API = ""; // same domain or backend URL
+const API = ""; // assuming same domain
 
 let currentLobby = null;
 let playerName = null;
 let pollingInterval = null;
 
 function createLobby() {
-  fetch(`${API}/create-lobby`, { method: "POST" })
+  playerName = document.getElementById("create-player-name").value.trim();
+  if (!playerName) {
+    alert("Enter your name");
+    return;
+  }
+
+  fetch(`${API}/create-lobby`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ player: playerName })
+  })
     .then(res => res.json())
     .then(data => {
       if (data.error) {
@@ -16,6 +26,7 @@ function createLobby() {
       alert("Lobby created! Code: " + currentLobby);
       document.getElementById("lobby-code-display").innerText = currentLobby;
       showLobbyUI();
+      startPollingRole();
     });
 }
 
@@ -68,11 +79,7 @@ function startPollingRole() {
 }
 
 function getRoleAndUpdateUI() {
-  fetch(`${API}/get-role`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ lobby_code: currentLobby, player: playerName })
-  })
+  fetch(`${API}/get-role?lobby=${currentLobby}&player=${playerName}`)
     .then(res => res.json())
     .then(data => {
       if (data.error) {
@@ -84,7 +91,6 @@ function getRoleAndUpdateUI() {
       document.getElementById("role-display").innerText = "Your role: " + data.role;
       document.getElementById("game-state-display").innerText = "Game state: " + data.game_state;
 
-      // Enable or disable Start Game button depending on game state and role (host can start only if waiting)
       const startGameBtn = document.getElementById("start-game-btn");
       if (data.role === "Host" && data.game_state === "waiting") {
         startGameBtn.style.display = "inline-block";
@@ -92,12 +98,7 @@ function getRoleAndUpdateUI() {
         startGameBtn.style.display = "none";
       }
 
-      // Show guess location only if Imposter and game in progress and player hasn't guessed yet
-      if (
-        data.role === "Imposter" &&
-        data.game_state === "in_progress" &&
-        !data.guessing // guessing: whether player already guessed
-      ) {
+      if (data.role === "Imposter" && data.game_state === "in_progress" && !data.guessing) {
         document.getElementById("guess-location-section").style.display = "block";
       } else {
         document.getElementById("guess-location-section").style.display = "none";
@@ -112,8 +113,7 @@ function getRoleAndUpdateUI() {
 }
 
 function guessLocation() {
-  const select = document.getElementById("guess-location-select");
-  const guessedLocation = select.value;
+  const guessedLocation = document.getElementById("guess-location-select").value;
   if (!guessedLocation) {
     alert("Select a location to guess");
     return;
@@ -134,7 +134,7 @@ function guessLocation() {
         return;
       }
       alert(data.message);
-      getRoleAndUpdateUI(); // refresh UI after guess
+      getRoleAndUpdateUI();
     });
 }
 
