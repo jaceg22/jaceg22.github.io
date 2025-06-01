@@ -7,19 +7,38 @@
 <body>
   <h1>The Mole</h1>
 
-  <div id="player-section">
-    <input id="players" placeholder="Comma-separated player names">
-    <button onclick="startGame()">Start Game</button>
+  <div id="lobby-setup-section">
+    <button onclick="createLobby()">Create Lobby</button><br><br>
+
+    <input id="join-lobby-code" placeholder="Enter Lobby Code">
+    <input id="join-player-name" placeholder="Enter Your Name">
+    <button onclick="joinLobby()">Join Lobby</button>
   </div>
 
-  <div id="game-controls" style="display:none;">
-    <button onclick="assignRoles()">Assign Roles</button>
-    <button onclick="shuffleLocations()">Shuffle Locations</button>
-    <button onclick="loadQuestions()">Load Questions</button>
-    <button onclick="getQuestion()">Next Question</button>
-    <div id="question-display"></div>
-    <div id="roles-display"></div>
-    <div id="scores-display"></div>
+  <div id="lobby-section" style="display:none;">
+    <p>Lobby Code: <span id="lobby-code-display"></span></p>
+    <p id="role-display">Your role: </p>
+    <p id="game-state-display">Game state: waiting</p>
+
+    <button id="start-game-btn" onclick="startGame()">Start Game</button>
+
+    <div id="guess-location-section" style="display:none;">
+      <select id="guess-location-select">
+        <option value="">Select Location</option>
+        <option value="Circus">Circus</option>
+        <option value="Amusement Park">Amusement Park</option>
+        <option value="Crashing Airplane">Crashing Airplane</option>
+        <option value="Titanic">Titanic</option>
+        <option value="Burning Orphanage">Burning Orphanage</option>
+        <option value="Dingy Motel Drug Deal">Dingy Motel Drug Deal</option>
+        <option value="Prison">Prison</option>
+        <option value="Safari">Safari</option>
+        <option value="Zombie Apocalypse">Zombie Apocalypse</option>
+        <option value="Organ-Harvesting Hospital">Organ-Harvesting Hospital</option>
+        <option value="Nuclear Submarine">Nuclear Submarine</option>
+      </select>
+      <button onclick="guessLocation()">Guess Location</button>
+    </div>
   </div>
 
   <script src="{{ url_for('static', filename='script.js') }}"></script>
