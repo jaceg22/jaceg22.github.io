@@ -1,4 +1,4 @@
-const API = "https://your-backend-url.onrender.com"; // Replace this after deploying backend
+const API = "https://jaceg22-github-io.onrender.com"; // Replace this after deploying backend
 
 function startGame() {
   const input = document.getElementById("players").value;
