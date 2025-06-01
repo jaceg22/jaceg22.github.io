@@ -1,4 +1,4 @@
-const API = "https://jaceg22-github-io.onrender.com"; // Replace this after deploying backend
+const API = ""; // Blank means same domain as backend, works on Render
 
 function startGame() {
   const input = document.getElementById("players").value;

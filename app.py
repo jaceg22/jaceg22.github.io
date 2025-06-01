@@ -1,9 +1,9 @@
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 import random
 import os
 
-app = Flask(__name__, static_folder='static', static_url_path='', template_folder='.')
+app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
 
 locations = [
@@ -18,11 +18,7 @@ scores = {}
 
 @app.route("/")
 def index():
-    return send_from_directory('.', 'index.html')
-
-@app.route("/<path:path>")
-def static_files(path):
-    return send_from_directory('.', path)
+    return render_template("index.html")
 
 @app.route("/start", methods=["POST"])
 def start_game():
