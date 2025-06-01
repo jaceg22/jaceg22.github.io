@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>The Mole</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>The Mole</h1>
+
+  <div id="player-section">
+    <input id="players" placeholder="Comma-separated player names">
+    <button onclick="startGame()">Start Game</button>
+  </div>
+
+  <div id="game-controls" style="display:none;">
+    <button onclick="assignRoles()">Assign Roles</button>
+    <button onclick="shuffleLocations()">Shuffle Locations</button>
+    <button onclick="loadQuestions()">Load Questions</button>
+    <button onclick="getQuestion()">Next Question</button>
+    <div id="question-display"></div>
+    <div id="roles-display"></div>
+    <div id="scores-display"></div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
