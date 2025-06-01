@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 import random
 import string
 
@@ -212,6 +212,10 @@ def submit_guess():
         return jsonify({"all_guessed": True, "result": result})
 
     return jsonify({"all_guessed": False})
+
+@app.route("/")
+def index():
+    return render_template("index.html")
 
 if __name__ == "__main__":
     app.run(debug=True)
