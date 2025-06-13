@@ -817,7 +817,7 @@
         });
 
         socket.on('game_updated', (data) => {
-            console.log('Game updated:', data.status);
+            console.log('Game updated:', data.status, 'Round:', data.currentRound);
             gameState = { ...gameState, ...data };
             if (data.scoreboard) {
                 scoreboardData = data.scoreboard;
@@ -829,6 +829,11 @@
             } else if (data.status === 'playing') {
                 // Hide voting section when returning to playing
                 document.getElementById('voting-section').style.display = 'none';
+                
+                // Show message about continuing to next round
+                if (data.currentRound > 1) {
+                    addToLog(`🔄 Round ${data.currentRound} started! Continue asking questions.`);
+                }
                 
                 if (data.currentRound > 1) {
                     // Show round summary after voting concludes and new round starts
@@ -864,6 +869,10 @@
         socket.on('game_over', (result) => {
             console.log('Game over event received:', result);
             addToLog(`🏁 ${result.message}`);
+        });
+
+        socket.on('round_continued', (data) => {
+            addToLog(`🔄 ${data.message} Starting Round ${data.round}.`);
         });
 
         socket.on('scoreboard_updated', (data) => {

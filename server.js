@@ -336,8 +336,8 @@ class GameRoom {
         
         console.log(`Starting round ${this.gameState.currentRound}, status: ${this.gameState.status}`);
         
-        // Update and broadcast scoreboard after round
-        this.updateScoreboard();
+        // Don't update scoreboard here - only at game end
+        // this.updateScoreboard();
     }
 
     imposterReveal(locationGuess) {
@@ -384,9 +384,10 @@ class GameRoom {
     }
 
     updateScoreboard() {
-        // Simple scoring: winners get +1 point
+        // Simple scoring: winners get +1 point (only calculate once at game end)
         this.scoreboard.forEach((stats, socketId) => {
-            // Reset score to games won (simple 1 point per win system)
+            // Keep existing score calculation - don't recalculate during the game
+            // Score only gets updated when gamesWon increases in endGame()
             stats.score = stats.gamesWon;
         });
     }
@@ -653,9 +654,17 @@ io.on('connection', (socket) => {
                 // Send updated game state to all players
                 room.players.forEach((player, socketId) => {
                     const gameStateForPlayer = room.getGameStateForPlayer(socketId);
-                    console.log(`Sending game update to ${player.name}: status=${gameStateForPlayer.status}`);
+                    console.log(`Sending game update to ${player.name}: status=${gameStateForPlayer.status}, round=${gameStateForPlayer.currentRound}`);
                     io.to(socketId).emit('game_updated', gameStateForPlayer);
                 });
+                
+                // Send specific message about what happened
+                if (room.gameState.status === 'playing') {
+                    io.to(room.roomCode).emit('round_continued', { 
+                        round: room.gameState.currentRound,
+                        message: 'Not enough votes to eliminate anyone. Game continues!'
+                    });
+                }
                 
                 // If game ended, also send a specific game over event
                 if (room.gameState.status === 'ended') {
