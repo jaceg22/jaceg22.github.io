@@ -60,7 +60,8 @@ class GameRoom {
             questionQueue: [...questions],
             gameHistory: [],
             votes: new Map(),
-            playerAnswers: new Map()
+            playerAnswers: new Map(),
+            currentQuestion: null // Track the current question being asked
         };
         this.playerOrder = [];
         this.scoreboard = new Map(); // socketId -> player stats
@@ -122,6 +123,10 @@ class GameRoom {
         const imposterIndex = Math.floor(Math.random() * this.playerOrder.length);
         this.gameState.imposter = this.playerOrder[imposterIndex];
         
+        console.log(`Game started in room ${this.roomCode}:`);
+        console.log(`Location: ${this.gameState.location}`);
+        console.log(`Imposter: ${this.players.get(this.gameState.imposter).name}`);
+        
         // Update scoreboard - increment games played and times imposter
         this.players.forEach((player, socketId) => {
             const stats = this.scoreboard.get(socketId);
@@ -142,6 +147,7 @@ class GameRoom {
         this.gameState.gameHistory = [];
         this.gameState.votes.clear();
         this.gameState.playerAnswers.clear();
+        this.gameState.currentQuestion = null;
         
         // Shuffle question queue
         this.shuffleArray(this.gameState.questionQueue);
@@ -168,24 +174,28 @@ class GameRoom {
         return this.gameState.questionQueue.shift();
     }
 
-    processAnswer(asker, target, question, answer) {
+    processAnswer(askerId, targetId, question, answer) {
+        console.log(`Processing answer in room ${this.roomCode}:`);
+        console.log(`Asker: ${this.players.get(askerId).name}, Target: ${this.players.get(targetId).name}`);
+        console.log(`Question: ${question}, Answer: ${answer}`);
+        
         // Add to game history
         this.gameState.gameHistory.push({
-            asker: this.players.get(asker).name,
-            target: this.players.get(target).name,
+            asker: this.players.get(askerId).name,
+            target: this.players.get(targetId).name,
             question,
             answer,
             round: this.gameState.currentRound
         });
 
         // Update scoreboard
-        const askerStats = this.scoreboard.get(asker);
-        const targetStats = this.scoreboard.get(target);
+        const askerStats = this.scoreboard.get(askerId);
+        const targetStats = this.scoreboard.get(targetId);
         askerStats.questionsAsked++;
         targetStats.questionsAnswered++;
 
         // Track player answers
-        const targetName = this.players.get(target).name;
+        const targetName = this.players.get(targetId).name;
         if (!this.gameState.playerAnswers.has(targetName)) {
             this.gameState.playerAnswers.set(targetName, []);
         }
@@ -194,9 +204,14 @@ class GameRoom {
         // Move to next turn
         this.gameState.questionsThisRound++;
         this.gameState.currentTurn = (this.gameState.currentTurn + 1) % this.playerOrder.length;
+        this.gameState.currentQuestion = null; // Clear current question
+
+        console.log(`Questions this round: ${this.gameState.questionsThisRound}/${this.gameState.questionsPerRound}`);
+        console.log(`Next turn: ${this.gameState.currentTurn} (${this.players.get(this.getCurrentPlayer()).name})`);
 
         // Check if round is complete
         if (this.gameState.questionsThisRound >= this.gameState.questionsPerRound) {
+            console.log('Round complete, starting voting phase');
             this.startVoting();
         }
     }
@@ -204,9 +219,11 @@ class GameRoom {
     startVoting() {
         this.gameState.status = 'voting';
         this.gameState.votes.clear();
+        console.log(`Voting started in room ${this.roomCode}`);
     }
 
     submitVote(voterId, targetId) {
+        console.log(`Vote submitted: ${this.players.get(voterId).name} votes for ${this.players.get(targetId).name}`);
         this.gameState.votes.set(voterId, targetId);
         
         // Update voting stats
@@ -215,6 +232,7 @@ class GameRoom {
         
         // Check if all players have voted
         if (this.gameState.votes.size === this.players.size) {
+            console.log('All votes received, processing results');
             this.processVotingResults();
         }
     }
@@ -226,6 +244,10 @@ class GameRoom {
             const count = voteCounts.get(targetId) || 0;
             voteCounts.set(targetId, count + 1);
         });
+
+        console.log('Vote counts:', Array.from(voteCounts.entries()).map(([id, count]) => 
+            `${this.players.get(id).name}: ${count}`
+        ));
 
         // Find player with most votes
         let maxVotes = 0;
@@ -239,10 +261,12 @@ class GameRoom {
 
         // Check for majority (more than half)
         const majorityThreshold = Math.ceil(this.players.size / 2);
+        console.log(`Majority threshold: ${majorityThreshold}, Max votes: ${maxVotes}`);
         
         if (maxVotes >= majorityThreshold) {
             // Someone was voted out
             const wasImposter = mostVoted === this.gameState.imposter;
+            console.log(`${this.players.get(mostVoted).name} was voted out. Was imposter: ${wasImposter}`);
             
             // Update correct vote stats
             this.gameState.votes.forEach((targetId, voterId) => {
@@ -260,6 +284,7 @@ class GameRoom {
             }
         } else {
             // No majority, continue to next round
+            console.log('No majority reached, continuing to next round');
             this.continueToNextRound();
         }
     }
@@ -276,22 +301,27 @@ class GameRoom {
         this.gameState.questionsThisRound = 0;
         this.gameState.status = 'playing';
         this.gameState.votes.clear();
+        this.gameState.currentQuestion = null;
+        
+        console.log(`Starting round ${this.gameState.currentRound}`);
         
         // Update and broadcast scoreboard after round
         this.updateScoreboard();
     }
 
-    imposterReveal(imposterGuess) {
-        const wasCorrect = imposterGuess === this.gameState.location;
+    imposterReveal(locationGuess) {
+        console.log(`Imposter reveal: ${this.players.get(this.gameState.imposter).name} guessed ${locationGuess} (correct: ${this.gameState.location})`);
+        const wasCorrect = locationGuess === this.gameState.location;
         
         if (wasCorrect) {
             this.endGame('imposter_wins', `Imposter correctly guessed the location: ${this.gameState.location}`);
         } else {
-            this.endGame('location_wins', `Imposter guessed wrong! Location was ${this.gameState.location}, not ${imposterGuess}`);
+            this.endGame('location_wins', `Imposter guessed wrong! Location was ${this.gameState.location}, not ${locationGuess}`);
         }
     }
 
     endGame(winner, message) {
+        console.log(`Game ended in room ${this.roomCode}: ${winner} - ${message}`);
         this.gameState.status = 'ended';
         this.gameState.gameResult = {
             winner,
@@ -374,6 +404,7 @@ class GameRoom {
         };
         
         this.gameHistory.push(gameRecord);
+        console.log(`Game saved to history: Game #${gameRecord.gameNumber}`);
     }
 
     getScoreboardData() {
@@ -521,6 +552,15 @@ io.on('connection', (socket) => {
         const askerName = room.players.get(socket.id).name;
         const targetName = room.players.get(targetId).name;
 
+        // Store current question for tracking
+        room.gameState.currentQuestion = {
+            askerId: socket.id,
+            targetId,
+            question
+        };
+
+        console.log(`Question asked in room ${room.roomCode}: ${askerName} asks ${targetName} "${question}"`);
+
         // Send question to all players
         io.to(room.roomCode).emit('question_asked', {
             asker: askerName,
@@ -535,17 +575,39 @@ io.on('connection', (socket) => {
         const room = findPlayerRoom(socket.id);
         if (!room) return;
 
-        room.processAnswer(asker, socket.id, question, answer);
+        // Get the asker ID from the current question
+        let askerId = null;
+        if (room.gameState.currentQuestion && room.gameState.currentQuestion.targetId === socket.id) {
+            askerId = room.gameState.currentQuestion.askerId;
+        } else {
+            // Fallback: find asker by name
+            for (const [id, player] of room.players.entries()) {
+                if (player.name === asker) {
+                    askerId = id;
+                    break;
+                }
+            }
+        }
+
+        if (!askerId) {
+            console.error('Could not find asker ID for answer submission');
+            return;
+        }
+
+        console.log(`Answer submitted in room ${room.roomCode}: ${answer}`);
+
+        // Process the answer
+        room.processAnswer(askerId, socket.id, question, answer);
 
         // Send answer to all players
         io.to(room.roomCode).emit('answer_submitted', {
-            asker: room.players.get(asker).name,
+            asker: room.players.get(askerId).name,
             target: room.players.get(socket.id).name,
             question,
             answer
         });
 
-        // Send updated game state
+        // Send updated game state to all players
         room.players.forEach((player, socketId) => {
             io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
         });
@@ -566,16 +628,23 @@ io.on('connection', (socket) => {
 
         // If voting is complete, send results
         if (room.gameState.votes.size === room.players.size) {
-            room.players.forEach((player, socketId) => {
-                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
-            });
+            setTimeout(() => {
+                room.players.forEach((player, socketId) => {
+                    io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+                });
+            }, 1000); // Small delay to let players see all votes are in
         }
     });
 
     socket.on('imposter_reveal', ({ locationGuess }) => {
         const room = findPlayerRoom(socket.id);
-        if (!room || socket.id !== room.gameState.imposter) return;
+        if (!room || socket.id !== room.gameState.imposter) {
+            console.log(`Imposter reveal failed: room=${!!room}, isImposter=${socket.id === room?.gameState.imposter}`);
+            socket.emit('error', 'You are not the imposter');
+            return;
+        }
 
+        console.log(`Imposter reveal in room ${room.roomCode}: ${locationGuess}`);
         room.imposterReveal(locationGuess);
 
         // Send final game state to all players
@@ -602,6 +671,7 @@ io.on('connection', (socket) => {
             
             if (room.players.size === 0) {
                 gameRooms.delete(room.roomCode);
+                console.log(`Room ${room.roomCode} deleted (no players left)`);
             } else {
                 io.to(room.roomCode).emit('player_left', {
                     playerName: player?.name,
