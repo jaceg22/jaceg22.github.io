@@ -157,6 +157,19 @@
             margin: 1rem 0;
         }
 
+        .ready-to-vote-section {
+            background: #fff3cd;
+            border: 1px solid #ffeeba;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .ready-to-vote-section p {
+            margin: 0 0 10px 0;
+            font-weight: bold;
+        }
+
         .game-log {
             background: rgba(52, 73, 94, 0.4);
             padding: 1rem;
@@ -826,23 +839,6 @@
             
             if (data.status === 'voting') {
                 showVotingSection();
-            } else if (data.status === 'playing') {
-                // Make sure we show the game interface properly when returning to playing
-                console.log('Returning to playing state, current turn:', data.currentTurn);
-                
-                // Show message about continuing to next round
-                if (data.currentRound > 1) {
-                    addToLog(`🔄 Round ${data.currentRound} started! Continue asking questions.`);
-                }
-                
-                if (data.currentRound > 1) {
-                    // Show round summary after voting concludes and new round starts
-                    if (roundEndScoreboard && data.currentRound > roundEndScoreboard.round) {
-                        const summaryHTML = generateRoundSummary(roundEndScoreboard);
-                        showRoundSummary(summaryHTML);
-                        roundEndScoreboard = null;
-                    }
-                }
             } else if (data.status === 'ended') {
                 showGameOver();
             }
@@ -860,6 +856,16 @@
             }
         });
 
+        socket.on('ready_count_updated', (data) => {
+            addToLog(`🗳️ ${data.readyCount}/${data.requiredCount} players ready to vote`);
+            
+            // Update the ready count display
+            if (gameState.status === 'playing') {
+                gameState.readyToVoteCount = data.readyCount;
+                updateGameDisplay();
+            }
+        });
+
         socket.on('all_votes_received', () => {
             addToLog('🗳️ All votes received! Processing results...');
         });
@@ -867,10 +873,6 @@
         socket.on('game_over', (result) => {
             console.log('Game over event received:', result);
             addToLog(`🏁 ${result.message}`);
-        });
-
-        socket.on('round_continued', (data) => {
-            addToLog(`🔄 ${data.message} Starting Round ${data.round}.`);
         });
 
         socket.on('scoreboard_updated', (data) => {

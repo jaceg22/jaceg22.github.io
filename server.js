@@ -79,7 +79,9 @@ class GameRoom {
             gameHistory: [],
             votes: new Map(),
             playerAnswers: new Map(),
-            currentQuestion: null // Track the current question being asked
+            currentQuestion: null, // Track the current question being asked
+            readyToVoteCount: 0, // Track how many players are ready to vote
+            readyToVotePlayers: new Set() // Track which players clicked ready
         };
         this.playerOrder = [];
         this.scoreboard = new Map(); // socketId -> player stats
@@ -167,6 +169,8 @@ class GameRoom {
         this.gameState.votes.clear();
         this.gameState.playerAnswers.clear();
         this.gameState.currentQuestion = null;
+        this.gameState.readyToVoteCount = 0;
+        this.gameState.readyToVotePlayers.clear();
         
         // Shuffle question queue
         this.shuffleArray(this.gameState.questionQueue);
@@ -228,9 +232,24 @@ class GameRoom {
         console.log(`Questions this round: ${this.gameState.questionsThisRound}/${this.gameState.questionsPerRound}`);
         console.log(`Next turn: ${this.gameState.currentTurn} (${this.players.get(this.getCurrentPlayer()).name})`);
 
-        // Check if round is complete
-        if (this.gameState.questionsThisRound >= this.gameState.questionsPerRound) {
-            console.log('Round complete, starting voting phase');
+        // Don't automatically start voting after round completion
+        // Voting only starts when players are ready
+    }
+
+    readyToVote(playerId) {
+        if (this.gameState.readyToVotePlayers.has(playerId)) {
+            console.log(`Player ${this.players.get(playerId).name} already marked ready to vote`);
+            return; // Player already marked ready
+        }
+
+        this.gameState.readyToVotePlayers.add(playerId);
+        this.gameState.readyToVoteCount++;
+        
+        console.log(`${this.players.get(playerId).name} is ready to vote. Count: ${this.gameState.readyToVoteCount}/${this.players.size - 1}`);
+
+        // Check if enough players are ready (all except one)
+        if (this.gameState.readyToVoteCount >= this.players.size - 1) {
+            console.log('Enough players ready, starting voting phase');
             this.startVoting();
         }
     }
@@ -287,14 +306,14 @@ class GameRoom {
             }
         });
 
-        // Need (players - 1) votes for the same person to end the game
+        // Need at least (players - 1) votes for someone to win
         const requiredVotes = this.players.size - 1;
         console.log(`Required votes: ${requiredVotes}, Max votes: ${maxVotes}`);
         
         if (maxVotes >= requiredVotes && mostVoted) {
-            // Someone was voted out with enough votes
+            // Someone got enough votes
             const wasImposter = mostVoted === this.gameState.imposter;
-            console.log(`${this.players.get(mostVoted).name} was voted out. Was imposter: ${wasImposter}`);
+            console.log(`${this.players.get(mostVoted).name} got enough votes. Was imposter: ${wasImposter}`);
             
             // Update correct vote stats
             this.gameState.votes.forEach((targetId, voterId) => {
@@ -313,31 +332,10 @@ class GameRoom {
                 this.endGame('imposter_wins', `${this.players.get(mostVoted).name} was innocent. The imposter wins!`);
             }
         } else {
-            // Not enough votes for the same person, continue to next round
-            console.log('Not enough votes for the same person, continuing to next round');
-            this.continueToNextRound();
+            // Votes were too spread out - location team failed to coordinate
+            console.log('Votes too spread out, imposter wins by default');
+            this.endGame('imposter_wins', `Location team failed to coordinate their votes. The imposter wins!`);
         }
-    }
-
-    continueToNextRound() {
-        // Update rounds survived for all players
-        this.players.forEach((player, socketId) => {
-            const stats = this.scoreboard.get(socketId);
-            stats.roundsSurvived++;
-        });
-
-        this.gameState.currentRound++;
-        this.gameState.currentTurn = 0;
-        this.gameState.questionsThisRound = 0;
-        this.gameState.questionsPerRound = this.players.size; // Reset for new round
-        this.gameState.status = 'playing';
-        this.gameState.votes.clear();
-        this.gameState.currentQuestion = null;
-        
-        console.log(`Starting round ${this.gameState.currentRound}, status: ${this.gameState.status}`);
-        
-        // Don't update scoreboard here - only at game end
-        // this.updateScoreboard();
     }
 
     imposterReveal(locationGuess) {
@@ -626,6 +624,26 @@ io.on('connection', (socket) => {
         });
     });
 
+    socket.on('ready_to_vote', () => {
+        const room = findPlayerRoom(socket.id);
+        if (!room || room.gameState.status !== 'playing') return;
+
+        room.readyToVote(socket.id);
+
+        // Broadcast the updated ready count to all players
+        io.to(room.roomCode).emit('ready_count_updated', {
+            readyCount: room.gameState.readyToVoteCount,
+            requiredCount: room.players.size - 1
+        });
+
+        // If voting starts, send game state update
+        if (room.gameState.status === 'voting') {
+            room.players.forEach((player, socketId) => {
+                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+            });
+        }
+    });
+
     socket.on('submit_vote', ({ targetId }) => {
         const room = findPlayerRoom(socket.id);
         if (!room || room.gameState.status !== 'voting') return;
@@ -662,14 +680,6 @@ io.on('connection', (socket) => {
                     console.log(`Sending game update to ${player.name}: status=${gameStateForPlayer.status}, round=${gameStateForPlayer.currentRound}`);
                     io.to(socketId).emit('game_updated', gameStateForPlayer);
                 });
-                
-                // Send specific message about what happened
-                if (room.gameState.status === 'playing') {
-                    io.to(room.roomCode).emit('round_continued', { 
-                        round: room.gameState.currentRound,
-                        message: 'Not enough votes to eliminate anyone. Game continues!'
-                    });
-                }
                 
                 // If game ended, also send a specific game over event
                 if (room.gameState.status === 'ended') {
