@@ -370,14 +370,14 @@ class GameRoom {
             
             if (didWin) {
                 stats.gamesWon++;
+                stats.score = stats.gamesWon; // Update score directly here
                 if (isImposter) {
                     stats.timesImposterWon++;
                 }
             }
         });
 
-        // Calculate final scores and save game to history
-        this.updateScoreboard();
+        // Save game to history but don't call updateScoreboard (already updated above)
         this.saveGameToHistory();
         
         console.log(`Game state after ending: status=${this.gameState.status}, winner=${winner}`);
@@ -444,9 +444,14 @@ class GameRoom {
     }
 }
 
-// Generate random room code
+// Generate random room code (letters only)
 function generateRoomCode() {
-    return Math.random().toString(36).substring(2, 8).toUpperCase();
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    let result = '';
+    for (let i = 0; i < 6; i++) {
+        result += letters.charAt(Math.floor(Math.random() * letters.length));
+    }
+    return result;
 }
 
 // Socket.IO connection handling

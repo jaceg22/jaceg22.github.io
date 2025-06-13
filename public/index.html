@@ -817,7 +817,7 @@
         });
 
         socket.on('game_updated', (data) => {
-            console.log('Game updated:', data.status, 'Round:', data.currentRound);
+            console.log('Game updated:', data.status, 'Round:', data.currentRound, 'Current turn:', data.currentTurn);
             gameState = { ...gameState, ...data };
             if (data.scoreboard) {
                 scoreboardData = data.scoreboard;
@@ -827,8 +827,8 @@
             if (data.status === 'voting') {
                 showVotingSection();
             } else if (data.status === 'playing') {
-                // Hide voting section when returning to playing
-                document.getElementById('voting-section').style.display = 'none';
+                // Make sure we show the game interface properly when returning to playing
+                console.log('Returning to playing state, current turn:', data.currentTurn);
                 
                 // Show message about continuing to next round
                 if (data.currentRound > 1) {
@@ -844,8 +844,6 @@
                     }
                 }
             } else if (data.status === 'ended') {
-                // Hide voting section when game ends
-                document.getElementById('voting-section').style.display = 'none';
                 showGameOver();
             }
         });
