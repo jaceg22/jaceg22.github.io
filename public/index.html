@@ -489,7 +489,7 @@
 
             <div id="voting-section" class="voting-section" style="display: none;">
                 <h3>🗳️ Vote for the Imposter</h3>
-                <p>Choose who you think is the imposter:</p>
+                <p>Choose who you think is the imposter, or select "Not Ready" if you need more time:</p>
                 <div id="vote-options"></div>
             </div>
 
@@ -1132,18 +1132,25 @@
             const voteOptions = document.getElementById('vote-options');
             
             voteOptions.innerHTML = '';
+            
+            // Add all players as voting options
             gameState.playerOrder?.forEach(player => {
-                if (!player.isYou) {
-                    const button = document.createElement('button');
-                    button.className = 'btn btn-danger';
-                    button.textContent = player.name;
-                    button.onclick = () => submitVote(player.id);
-                    voteOptions.appendChild(button);
-                }
+                const button = document.createElement('button');
+                button.className = 'btn btn-danger';
+                button.textContent = player.name;
+                button.onclick = () => submitVote(player.id);
+                voteOptions.appendChild(button);
             });
             
+            // Add "Not Ready" option
+            const notReadyButton = document.createElement('button');
+            notReadyButton.className = 'btn btn-warning';
+            notReadyButton.textContent = 'Not Ready';
+            notReadyButton.onclick = () => submitVote('not_ready');
+            voteOptions.appendChild(notReadyButton);
+            
             votingSection.style.display = 'block';
-            addToLog('🗳️ Voting phase started!');
+            addToLog('🗳️ Voting phase started! Choose who you think is the imposter.');
         }
 
         function showGameOver() {

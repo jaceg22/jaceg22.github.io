@@ -20,26 +20,44 @@ const locations = [
 ];
 
 const questions = [
-    "What's the first thing you notice when you arrive here?",
-    "What would you be most worried about in this place?",
-    "What's the most important thing to remember here?",
-    "How would you describe the atmosphere?",
-    "What would you avoid doing here?",
-    "What's the biggest challenge in this location?",
-    "What equipment would be essential here?",
-    "How would you stay safe in this environment?",
-    "What's the strangest thing about this place?",
-    "What would a newcomer need to know?",
-    "What sounds do you hear constantly here?",
-    "What's the most dangerous aspect of this location?",
-    "What would you pack if you knew you were coming here?",
-    "How do people communicate in this environment?",
-    "What's the emergency protocol here?",
-    "What would make someone stand out as not belonging?",
-    "What's the daily routine like here?",
-    "What rules must everyone follow here?",
-    "What's the hierarchy or chain of command?",
-    "How do you know if you're in trouble here?"
+    "Would you expect to see me here?",
+    "What is the last thing you said?",
+    "Would you be scared if someone was near you?",
+    "What do you see around you?",
+    "What do you think of the food?",
+    "What's that smell?",
+    "What's that noise?",
+    "What is the price of admission?",
+    "What time of day is it here?",
+    "Who else might you meet here?",
+    "Would you want to take a picture here?",
+    "What kind of clothing would you wear here?",
+    "How long would you stay here?",
+    "What is the weather like?",
+    "What did you bring with you?",
+    "How would you describe the vibe?",
+    "Would you need a ticket to enter?",
+    "Do you feel safe here?",
+    "What language do people speak here?",
+    "What type of transportation would you use to get here?",
+    "What celebrity would you expect to meet here?",
+    "What is everyone wearing?",
+    "What is this place's motto?",
+    "Would you take a date here?",
+    "What is the floor made out of?",
+    "If you were an actor, who would you be?",
+    "Where's a good place to smoke around here?",
+    "What do you think would happen if I touched this button?",
+    "How stressed are people around here?",
+    "If Taylor Swift were here, what would she be doing?",
+    "Is your family here?",
+    "Do you find the people here attractive?",
+    "What animal is that?",
+    "What's in that corner?",
+    "Why are they whispering?",
+    "How's your phone reception?",
+    "What's the seating situation like around here?",
+    "Are any crimes being committed here?"
 ];
 
 // Store game rooms
@@ -56,7 +74,7 @@ class GameRoom {
             currentRound: 1,
             currentTurn: 0,
             questionsThisRound: 0,
-            questionsPerRound: 5,
+            questionsPerRound: null, // Will be set to number of players
             questionQueue: [...questions],
             gameHistory: [],
             votes: new Map(),
@@ -144,6 +162,7 @@ class GameRoom {
         this.gameState.status = 'playing';
         this.gameState.currentTurn = 0;
         this.gameState.questionsThisRound = 0;
+        this.gameState.questionsPerRound = this.players.size; // One question per player per round
         this.gameState.gameHistory = [];
         this.gameState.votes.clear();
         this.gameState.playerAnswers.clear();
@@ -223,12 +242,14 @@ class GameRoom {
     }
 
     submitVote(voterId, targetId) {
-        console.log(`Vote submitted: ${this.players.get(voterId).name} votes for ${this.players.get(targetId).name}`);
+        console.log(`Vote submitted: ${this.players.get(voterId).name} votes for ${targetId === 'not_ready' ? 'Not Ready' : this.players.get(targetId)?.name || 'Unknown'}`);
         this.gameState.votes.set(voterId, targetId);
         
-        // Update voting stats
-        const voterStats = this.scoreboard.get(voterId);
-        voterStats.totalVotes++;
+        // Update voting stats (only for actual player votes, not "not ready")
+        if (targetId !== 'not_ready') {
+            const voterStats = this.scoreboard.get(voterId);
+            voterStats.totalVotes++;
+        }
         
         // Check if all players have voted
         if (this.gameState.votes.size === this.players.size) {
@@ -238,15 +259,17 @@ class GameRoom {
     }
 
     processVotingResults() {
-        // Count votes
+        // Count votes (excluding "not ready" votes)
         const voteCounts = new Map();
         this.gameState.votes.forEach((targetId) => {
-            const count = voteCounts.get(targetId) || 0;
-            voteCounts.set(targetId, count + 1);
+            if (targetId !== 'not_ready') {
+                const count = voteCounts.get(targetId) || 0;
+                voteCounts.set(targetId, count + 1);
+            }
         });
 
         console.log('Vote counts:', Array.from(voteCounts.entries()).map(([id, count]) => 
-            `${this.players.get(id).name}: ${count}`
+            `${this.players.get(id)?.name || 'Unknown'}: ${count}`
         ));
 
         // Find player with most votes
@@ -259,21 +282,23 @@ class GameRoom {
             }
         });
 
-        // Check for majority (more than half)
-        const majorityThreshold = Math.ceil(this.players.size / 2);
-        console.log(`Majority threshold: ${majorityThreshold}, Max votes: ${maxVotes}`);
+        // Need (players - 1) votes for the same person to end the game
+        const requiredVotes = this.players.size - 1;
+        console.log(`Required votes: ${requiredVotes}, Max votes: ${maxVotes}`);
         
-        if (maxVotes >= majorityThreshold) {
-            // Someone was voted out
+        if (maxVotes >= requiredVotes) {
+            // Someone was voted out with enough votes
             const wasImposter = mostVoted === this.gameState.imposter;
             console.log(`${this.players.get(mostVoted).name} was voted out. Was imposter: ${wasImposter}`);
             
             // Update correct vote stats
             this.gameState.votes.forEach((targetId, voterId) => {
-                const voterStats = this.scoreboard.get(voterId);
-                if ((wasImposter && targetId === this.gameState.imposter) || 
-                    (!wasImposter && targetId !== this.gameState.imposter)) {
-                    voterStats.correctVotes++;
+                if (targetId !== 'not_ready') {
+                    const voterStats = this.scoreboard.get(voterId);
+                    if ((wasImposter && targetId === this.gameState.imposter) || 
+                        (!wasImposter && targetId !== this.gameState.imposter)) {
+                        voterStats.correctVotes++;
+                    }
                 }
             });
             
@@ -283,8 +308,8 @@ class GameRoom {
                 this.endGame('imposter_wins', `${this.players.get(mostVoted).name} was innocent. The imposter wins!`);
             }
         } else {
-            // No majority, continue to next round
-            console.log('No majority reached, continuing to next round');
+            // Not enough votes for the same person, continue to next round
+            console.log('Not enough votes for the same person, continuing to next round');
             this.continueToNextRound();
         }
     }
@@ -299,6 +324,7 @@ class GameRoom {
         this.gameState.currentRound++;
         this.gameState.currentTurn = 0;
         this.gameState.questionsThisRound = 0;
+        this.gameState.questionsPerRound = this.players.size; // Reset for new round
         this.gameState.status = 'playing';
         this.gameState.votes.clear();
         this.gameState.currentQuestion = null;
@@ -351,36 +377,10 @@ class GameRoom {
     }
 
     updateScoreboard() {
-        // Calculate scores based on various factors
+        // Simple scoring: winners get +1 point
         this.scoreboard.forEach((stats, socketId) => {
-            let score = 0;
-            
-            // Base points for participation
-            score += stats.gamesPlayed * 10;
-            
-            // Win bonus
-            score += stats.gamesWon * 50;
-            
-            // Imposter performance bonus
-            if (stats.timesImposter > 0) {
-                const imposterWinRate = stats.timesImposterWon / stats.timesImposter;
-                score += imposterWinRate * 100;
-            }
-            
-            // Voting accuracy bonus
-            if (stats.totalVotes > 0) {
-                const voteAccuracy = stats.correctVotes / stats.totalVotes;
-                score += voteAccuracy * 75;
-            }
-            
-            // Activity bonus
-            score += stats.questionsAnswered * 5;
-            score += stats.questionsAsked * 3;
-            
-            // Survival bonus
-            score += stats.roundsSurvived * 15;
-            
-            stats.score = Math.round(score);
+            // Reset score to games won (simple 1 point per win system)
+            stats.score = stats.gamesWon;
         });
     }
 
@@ -620,8 +620,12 @@ io.on('connection', (socket) => {
         room.submitVote(socket.id, targetId);
 
         // Send updated vote count to all players
+        const voterName = this.players.get(socket.id).name;
+        const targetName = targetId === 'not_ready' ? 'Not Ready' : this.players.get(targetId)?.name || 'Unknown';
+        
         io.to(room.roomCode).emit('vote_submitted', {
-            voter: room.players.get(socket.id).name,
+            voter: voterName,
+            target: targetName,
             votesReceived: room.gameState.votes.size,
             totalPlayers: room.players.size
         });
