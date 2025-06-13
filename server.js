@@ -261,8 +261,12 @@ class GameRoom {
     processVotingResults() {
         // Count votes (excluding "not ready" votes)
         const voteCounts = new Map();
+        let notReadyCount = 0;
+        
         this.gameState.votes.forEach((targetId) => {
-            if (targetId !== 'not_ready') {
+            if (targetId === 'not_ready') {
+                notReadyCount++;
+            } else {
                 const count = voteCounts.get(targetId) || 0;
                 voteCounts.set(targetId, count + 1);
             }
@@ -271,6 +275,7 @@ class GameRoom {
         console.log('Vote counts:', Array.from(voteCounts.entries()).map(([id, count]) => 
             `${this.players.get(id)?.name || 'Unknown'}: ${count}`
         ));
+        console.log(`Not Ready votes: ${notReadyCount}`);
 
         // Find player with most votes
         let maxVotes = 0;
@@ -286,7 +291,7 @@ class GameRoom {
         const requiredVotes = this.players.size - 1;
         console.log(`Required votes: ${requiredVotes}, Max votes: ${maxVotes}`);
         
-        if (maxVotes >= requiredVotes) {
+        if (maxVotes >= requiredVotes && mostVoted) {
             // Someone was voted out with enough votes
             const wasImposter = mostVoted === this.gameState.imposter;
             console.log(`${this.players.get(mostVoted).name} was voted out. Was imposter: ${wasImposter}`);
@@ -329,7 +334,7 @@ class GameRoom {
         this.gameState.votes.clear();
         this.gameState.currentQuestion = null;
         
-        console.log(`Starting round ${this.gameState.currentRound}`);
+        console.log(`Starting round ${this.gameState.currentRound}, status: ${this.gameState.status}`);
         
         // Update and broadcast scoreboard after round
         this.updateScoreboard();
@@ -374,6 +379,8 @@ class GameRoom {
         // Calculate final scores and save game to history
         this.updateScoreboard();
         this.saveGameToHistory();
+        
+        console.log(`Game state after ending: status=${this.gameState.status}, winner=${winner}`);
     }
 
     updateScoreboard() {
@@ -632,11 +639,30 @@ io.on('connection', (socket) => {
 
         // If voting is complete, send results
         if (room.gameState.votes.size === room.players.size) {
+            // Send immediate feedback that all votes are in
+            io.to(room.roomCode).emit('all_votes_received');
+            
             setTimeout(() => {
+                console.log(`Processing voting results for room ${room.roomCode}`);
+                
+                // Process voting results (this will either end game or continue to next round)
+                room.processVotingResults();
+                
+                console.log(`After processing votes: status=${room.gameState.status}`);
+                
+                // Send updated game state to all players
                 room.players.forEach((player, socketId) => {
-                    io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+                    const gameStateForPlayer = room.getGameStateForPlayer(socketId);
+                    console.log(`Sending game update to ${player.name}: status=${gameStateForPlayer.status}`);
+                    io.to(socketId).emit('game_updated', gameStateForPlayer);
                 });
-            }, 1000); // Small delay to let players see all votes are in
+                
+                // If game ended, also send a specific game over event
+                if (room.gameState.status === 'ended') {
+                    console.log('Game ended, sending game_over event');
+                    io.to(room.roomCode).emit('game_over', room.gameState.gameResult);
+                }
+            }, 2000); // Longer delay to let players see all votes are in
         }
     });
 

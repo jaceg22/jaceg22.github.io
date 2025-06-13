@@ -691,6 +691,7 @@
         }
 
         function submitVote(targetId) {
+            console.log('Submitting vote for:', targetId);
             socket.emit('submit_vote', { targetId });
             document.getElementById('voting-section').style.display = 'none';
         }
@@ -816,6 +817,7 @@
         });
 
         socket.on('game_updated', (data) => {
+            console.log('Game updated:', data.status);
             gameState = { ...gameState, ...data };
             if (data.scoreboard) {
                 scoreboardData = data.scoreboard;
@@ -824,14 +826,21 @@
             
             if (data.status === 'voting') {
                 showVotingSection();
-            } else if (data.status === 'playing' && data.currentRound > 1) {
-                // Show round summary after voting concludes and new round starts
-                if (roundEndScoreboard && data.currentRound > roundEndScoreboard.round) {
-                    const summaryHTML = generateRoundSummary(roundEndScoreboard);
-                    showRoundSummary(summaryHTML);
-                    roundEndScoreboard = null;
+            } else if (data.status === 'playing') {
+                // Hide voting section when returning to playing
+                document.getElementById('voting-section').style.display = 'none';
+                
+                if (data.currentRound > 1) {
+                    // Show round summary after voting concludes and new round starts
+                    if (roundEndScoreboard && data.currentRound > roundEndScoreboard.round) {
+                        const summaryHTML = generateRoundSummary(roundEndScoreboard);
+                        showRoundSummary(summaryHTML);
+                        roundEndScoreboard = null;
+                    }
                 }
             } else if (data.status === 'ended') {
+                // Hide voting section when game ends
+                document.getElementById('voting-section').style.display = 'none';
                 showGameOver();
             }
         });
@@ -846,6 +855,15 @@
                     scoreboard: [...scoreboardData]
                 };
             }
+        });
+
+        socket.on('all_votes_received', () => {
+            addToLog('🗳️ All votes received! Processing results...');
+        });
+
+        socket.on('game_over', (result) => {
+            console.log('Game over event received:', result);
+            addToLog(`🏁 ${result.message}`);
         });
 
         socket.on('scoreboard_updated', (data) => {
