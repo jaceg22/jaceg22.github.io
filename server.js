@@ -63,6 +63,8 @@ class GameRoom {
             playerAnswers: new Map()
         };
         this.playerOrder = [];
+        this.scoreboard = new Map(); // socketId -> player stats
+        this.gameHistory = []; // Track all games in this room
     }
 
     addPlayer(socketId, name, isHost = false) {
@@ -73,6 +75,21 @@ class GameRoom {
             role: null // Will be 'imposter' or the location name
         });
         
+        // Initialize scoreboard for new player
+        this.scoreboard.set(socketId, {
+            name,
+            gamesPlayed: 0,
+            gamesWon: 0,
+            timesImposter: 0,
+            timesImposterWon: 0,
+            questionsAnswered: 0,
+            questionsAsked: 0,
+            correctVotes: 0,
+            totalVotes: 0,
+            roundsSurvived: 0,
+            score: 0
+        });
+        
         if (isHost) {
             this.hostId = socketId;
         }
@@ -81,6 +98,7 @@ class GameRoom {
     removePlayer(socketId) {
         const player = this.players.get(socketId);
         this.players.delete(socketId);
+        // Keep scoreboard data for returning players
         
         // If host left, assign new host
         if (socketId === this.hostId && this.players.size > 0) {
@@ -104,10 +122,14 @@ class GameRoom {
         const imposterIndex = Math.floor(Math.random() * this.playerOrder.length);
         this.gameState.imposter = this.playerOrder[imposterIndex];
         
-        // Assign roles to players
+        // Update scoreboard - increment games played and times imposter
         this.players.forEach((player, socketId) => {
+            const stats = this.scoreboard.get(socketId);
+            stats.gamesPlayed++;
+            
             if (socketId === this.gameState.imposter) {
                 player.role = 'imposter';
+                stats.timesImposter++;
             } else {
                 player.role = this.gameState.location;
             }
@@ -156,6 +178,12 @@ class GameRoom {
             round: this.gameState.currentRound
         });
 
+        // Update scoreboard
+        const askerStats = this.scoreboard.get(asker);
+        const targetStats = this.scoreboard.get(target);
+        askerStats.questionsAsked++;
+        targetStats.questionsAnswered++;
+
         // Track player answers
         const targetName = this.players.get(target).name;
         if (!this.gameState.playerAnswers.has(targetName)) {
@@ -180,6 +208,10 @@ class GameRoom {
 
     submitVote(voterId, targetId) {
         this.gameState.votes.set(voterId, targetId);
+        
+        // Update voting stats
+        const voterStats = this.scoreboard.get(voterId);
+        voterStats.totalVotes++;
         
         // Check if all players have voted
         if (this.gameState.votes.size === this.players.size) {
@@ -210,7 +242,18 @@ class GameRoom {
         
         if (maxVotes >= majorityThreshold) {
             // Someone was voted out
-            if (mostVoted === this.gameState.imposter) {
+            const wasImposter = mostVoted === this.gameState.imposter;
+            
+            // Update correct vote stats
+            this.gameState.votes.forEach((targetId, voterId) => {
+                const voterStats = this.scoreboard.get(voterId);
+                if ((wasImposter && targetId === this.gameState.imposter) || 
+                    (!wasImposter && targetId !== this.gameState.imposter)) {
+                    voterStats.correctVotes++;
+                }
+            });
+            
+            if (wasImposter) {
                 this.endGame('location_wins', `${this.players.get(mostVoted).name} was correctly identified as the imposter!`);
             } else {
                 this.endGame('imposter_wins', `${this.players.get(mostVoted).name} was innocent. The imposter wins!`);
@@ -222,15 +265,26 @@ class GameRoom {
     }
 
     continueToNextRound() {
+        // Update rounds survived for all players
+        this.players.forEach((player, socketId) => {
+            const stats = this.scoreboard.get(socketId);
+            stats.roundsSurvived++;
+        });
+
         this.gameState.currentRound++;
         this.gameState.currentTurn = 0;
         this.gameState.questionsThisRound = 0;
         this.gameState.status = 'playing';
         this.gameState.votes.clear();
+        
+        // Update and broadcast scoreboard after round
+        this.updateScoreboard();
     }
 
     imposterReveal(imposterGuess) {
-        if (imposterGuess === this.gameState.location) {
+        const wasCorrect = imposterGuess === this.gameState.location;
+        
+        if (wasCorrect) {
             this.endGame('imposter_wins', `Imposter correctly guessed the location: ${this.gameState.location}`);
         } else {
             this.endGame('location_wins', `Imposter guessed wrong! Location was ${this.gameState.location}, not ${imposterGuess}`);
@@ -245,6 +299,90 @@ class GameRoom {
             location: this.gameState.location,
             imposter: this.players.get(this.gameState.imposter).name
         };
+
+        // Update final game stats
+        this.players.forEach((player, socketId) => {
+            const stats = this.scoreboard.get(socketId);
+            const isImposter = socketId === this.gameState.imposter;
+            const didWin = (winner === 'imposter_wins' && isImposter) || 
+                          (winner === 'location_wins' && !isImposter);
+            
+            if (didWin) {
+                stats.gamesWon++;
+                if (isImposter) {
+                    stats.timesImposterWon++;
+                }
+            }
+        });
+
+        // Calculate final scores and save game to history
+        this.updateScoreboard();
+        this.saveGameToHistory();
+    }
+
+    updateScoreboard() {
+        // Calculate scores based on various factors
+        this.scoreboard.forEach((stats, socketId) => {
+            let score = 0;
+            
+            // Base points for participation
+            score += stats.gamesPlayed * 10;
+            
+            // Win bonus
+            score += stats.gamesWon * 50;
+            
+            // Imposter performance bonus
+            if (stats.timesImposter > 0) {
+                const imposterWinRate = stats.timesImposterWon / stats.timesImposter;
+                score += imposterWinRate * 100;
+            }
+            
+            // Voting accuracy bonus
+            if (stats.totalVotes > 0) {
+                const voteAccuracy = stats.correctVotes / stats.totalVotes;
+                score += voteAccuracy * 75;
+            }
+            
+            // Activity bonus
+            score += stats.questionsAnswered * 5;
+            score += stats.questionsAsked * 3;
+            
+            // Survival bonus
+            score += stats.roundsSurvived * 15;
+            
+            stats.score = Math.round(score);
+        });
+    }
+
+    saveGameToHistory() {
+        const gameRecord = {
+            gameNumber: this.gameHistory.length + 1,
+            date: new Date(),
+            location: this.gameState.location,
+            imposter: this.players.get(this.gameState.imposter).name,
+            winner: this.gameState.gameResult.winner,
+            rounds: this.gameState.currentRound,
+            players: Array.from(this.players.entries()).map(([id, player]) => ({
+                name: player.name,
+                role: player.role,
+                wasImposter: id === this.gameState.imposter
+            })),
+            finalScores: Array.from(this.scoreboard.entries()).map(([id, stats]) => ({
+                name: stats.name,
+                score: stats.score
+            }))
+        };
+        
+        this.gameHistory.push(gameRecord);
+    }
+
+    getScoreboardData() {
+        return Array.from(this.scoreboard.entries())
+            .map(([socketId, stats]) => ({
+                ...stats,
+                isOnline: this.players.has(socketId)
+            }))
+            .sort((a, b) => b.score - a.score);
     }
 
     getGameStateForPlayer(socketId) {
@@ -261,7 +399,8 @@ class GameRoom {
                 isYou: id === socketId
             })),
             // Hide imposter identity unless game is ended
-            imposter: this.gameState.status === 'ended' ? this.gameState.imposter : null
+            imposter: this.gameState.status === 'ended' ? this.gameState.imposter : null,
+            scoreboard: this.getScoreboardData()
         };
     }
 }
@@ -289,7 +428,8 @@ io.on('connection', (socket) => {
                 name: player.name, 
                 isHost: player.isHost,
                 isReady: player.isReady
-            }))
+            })),
+            scoreboard: room.getScoreboardData()
         });
     });
 
@@ -321,7 +461,8 @@ io.on('connection', (socket) => {
                 name: player.name, 
                 isHost: player.isHost,
                 isReady: player.isReady
-            }))
+            })),
+            scoreboard: room.getScoreboardData()
         });
     });
 
@@ -338,7 +479,8 @@ io.on('connection', (socket) => {
                 name: player.name, 
                 isHost: player.isHost,
                 isReady: player.isReady
-            }))
+            })),
+            scoreboard: room.getScoreboardData()
         });
     });
 
@@ -442,6 +584,16 @@ io.on('connection', (socket) => {
         });
     });
 
+    socket.on('request_scoreboard', () => {
+        const room = findPlayerRoom(socket.id);
+        if (!room) return;
+
+        socket.emit('scoreboard_updated', {
+            scoreboard: room.getScoreboardData(),
+            gameHistory: room.gameHistory
+        });
+    });
+
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
         const room = findPlayerRoom(socket.id);
@@ -458,7 +610,8 @@ io.on('connection', (socket) => {
                         name: player.name, 
                         isHost: player.isHost,
                         isReady: player.isReady
-                    }))
+                    })),
+                    scoreboard: room.getScoreboardData()
                 });
             }
         }
