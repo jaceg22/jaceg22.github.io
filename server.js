@@ -627,8 +627,8 @@ io.on('connection', (socket) => {
         room.submitVote(socket.id, targetId);
 
         // Send updated vote count to all players
-        const voterName = this.players.get(socket.id).name;
-        const targetName = targetId === 'not_ready' ? 'Not Ready' : this.players.get(targetId)?.name || 'Unknown';
+        const voterName = room.players.get(socket.id).name;
+        const targetName = targetId === 'not_ready' ? 'Not Ready' : room.players.get(targetId)?.name || 'Unknown';
         
         io.to(room.roomCode).emit('vote_submitted', {
             voter: voterName,
