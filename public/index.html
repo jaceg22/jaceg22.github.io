@@ -158,16 +158,24 @@
         }
 
         .ready-to-vote-section {
-            background: #fff3cd;
-            border: 1px solid #ffeeba;
-            border-radius: 8px;
+            background: rgba(241, 196, 15, 0.2);
+            border: 2px solid #f1c40f;
+            border-radius: 10px;
             padding: 15px;
             margin: 15px 0;
+            text-align: center;
         }
 
         .ready-to-vote-section p {
             margin: 0 0 10px 0;
             font-weight: bold;
+            color: #f1c40f;
+        }
+
+        .ready-to-vote-section .ready-count {
+            font-size: 1.2em;
+            color: #fff;
+            margin: 10px 0;
         }
 
         .game-log {
@@ -500,6 +508,14 @@
                 </div>
             </div>
 
+            <!-- Ready to Vote Section -->
+            <div id="ready-to-vote-section" class="ready-to-vote-section" style="display: none;">
+                <p>🗳️ Ready to start voting?</p>
+                <div class="ready-count" id="ready-count-display">0 players ready</div>
+                <p>At least <span id="required-count">2</span> players need to be ready before voting begins.</p>
+                <button id="ready-to-vote-btn" class="btn btn-warning" onclick="readyToVote()">I'm Ready to Vote!</button>
+            </div>
+
             <div id="voting-section" class="voting-section" style="display: none;">
                 <h3>🗳️ Vote for the Imposter</h3>
                 <p>Choose who you think is the imposter, or select "Not Ready" if you need more time:</p>
@@ -599,6 +615,7 @@
         let scoreboardData = [];
         let gameHistory = [];
         let roundEndScoreboard = null;
+        let hasClickedReadyToVote = false; // Track if player has clicked ready to vote
 
         const locations = [
             "Circus", "Amusement Park", "Crashing Airplane", "Titanic",
@@ -703,6 +720,22 @@
             hideModal('answer-modal');
         }
 
+        function readyToVote() {
+            if (hasClickedReadyToVote) {
+                showError('You have already indicated you are ready to vote');
+                return;
+            }
+            
+            socket.emit('ready_to_vote');
+            hasClickedReadyToVote = true;
+            
+            // Update button to show they've clicked it
+            const btn = document.getElementById('ready-to-vote-btn');
+            btn.textContent = 'Ready! Waiting for others...';
+            btn.disabled = true;
+            btn.className = 'btn btn-primary';
+        }
+
         function submitVote(targetId) {
             console.log('Submitting vote for:', targetId);
             socket.emit('submit_vote', { targetId });
@@ -728,6 +761,7 @@
             showScreen('lobby-screen');
             // Reset game state
             gameState = {};
+            hasClickedReadyToVote = false;
             // Request updated scoreboard
             socket.emit('request_scoreboard');
         }
@@ -795,6 +829,7 @@
 
         socket.on('game_started', (data) => {
             gameState = data;
+            hasClickedReadyToVote = false; // Reset for new game
             if (data.scoreboard) {
                 scoreboardData = data.scoreboard;
             }
@@ -1008,6 +1043,36 @@
             const isMyTurn = gameState.playerOrder?.[gameState.currentTurn]?.isYou;
             askSection.style.display = (isMyTurn && gameState.status === 'playing') ? 'block' : 'none';
 
+            // Show/hide ready to vote section
+            const readyToVoteSection = document.getElementById('ready-to-vote-section');
+            const readyCountDisplay = document.getElementById('ready-count-display');
+            const requiredCountSpan = document.getElementById('required-count');
+            const readyToVoteBtn = document.getElementById('ready-to-vote-btn');
+
+            if (gameState.status === 'playing' && gameState.questionsThisRound >= gameState.questionsPerRound) {
+                // Show ready to vote section when round is complete
+                readyToVoteSection.style.display = 'block';
+                
+                const readyCount = gameState.readyToVoteCount || 0;
+                const requiredCount = (gameState.playerOrder?.length || 2) - 1;
+                
+                readyCountDisplay.textContent = `${readyCount}/${requiredCount} players ready`;
+                requiredCountSpan.textContent = requiredCount;
+                
+                // Update button state based on whether player has clicked
+                if (hasClickedReadyToVote) {
+                    readyToVoteBtn.textContent = 'Ready! Waiting for others...';
+                    readyToVoteBtn.disabled = true;
+                    readyToVoteBtn.className = 'btn btn-primary';
+                } else {
+                    readyToVoteBtn.textContent = "I'm Ready to Vote!";
+                    readyToVoteBtn.disabled = false;
+                    readyToVoteBtn.className = 'btn btn-warning';
+                }
+            } else {
+                readyToVoteSection.style.display = 'none';
+            }
+
             // Update in-game scoreboard
             updateGameScoreboard();
         }
@@ -1177,6 +1242,10 @@
             voteOptions.appendChild(notReadyButton);
             
             votingSection.style.display = 'block';
+            
+            // Hide ready to vote section when voting starts
+            document.getElementById('ready-to-vote-section').style.display = 'none';
+            
             addToLog('🗳️ Voting phase started! Choose who you think is the imposter.');
         }
 
