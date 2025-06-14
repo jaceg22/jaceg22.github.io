@@ -138,7 +138,7 @@
 
         .game-info {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 1rem;
             margin: 1rem 0;
         }
@@ -206,10 +206,12 @@
 
         .locations-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 0.5rem;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 0.4rem;
             margin: 1rem 0;
-            font-size: 0.9rem;
+            font-size: 0.8rem;
+            max-height: 150px;
+            overflow-y: auto;
         }
 
         .location-item {
@@ -485,6 +487,11 @@
                 <div class="info-card">
                     <h3>Players</h3>
                     <div id="game-players" class="players-list"></div>
+                </div>
+
+                <div class="info-card">
+                    <h3>📍 Possible Locations</h3>
+                    <div id="game-locations-list" class="locations-grid"></div>
                 </div>
             </div>
 
@@ -789,13 +796,29 @@
             hideModal('imposter-modal');
         }
 
+        function updateGameLocations() {
+            const gameLocationsList = document.getElementById('game-locations-list');
+            gameLocationsList.innerHTML = '';
+            
+            // Show either custom locations or default locations
+            const locationsToShow = customLocations.length > 0 ? customLocations : locations;
+            locationsToShow.forEach(location => {
+                const div = document.createElement('div');
+                div.className = 'location-item';
+                div.textContent = location;
+                gameLocationsList.appendChild(div);
+            });
+        }
+
         function backToLobby() {
             showScreen('lobby-screen');
             // Reset game state
             gameState = {};
             hasClickedReadyToVote = false;
-            // Request updated scoreboard
-            socket.emit('request_scoreboard');
+            // Request updated scoreboard data to prevent double counting
+            setTimeout(() => {
+                socket.emit('request_scoreboard');
+            }, 500);
         }
 
         // Scoreboard functions
@@ -903,6 +926,7 @@
             }
             showScreen('game-screen');
             updateGameDisplay();
+            updateGameLocations(); // Show locations for reference
             addToLog('🎮 Game started!');
             
             if (data.isImposter) {

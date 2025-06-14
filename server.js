@@ -358,7 +358,7 @@ class GameRoom {
             imposter: this.players.get(this.gameState.imposter).name
         };
 
-        // Award points based on team-based scoring
+        // Award points based on team-based scoring (only once per game)
         this.players.forEach((player, socketId) => {
             const stats = this.scoreboard.get(socketId);
             const isImposter = socketId === this.gameState.imposter;
@@ -375,11 +375,13 @@ class GameRoom {
             
             if (didWin) {
                 stats.gamesWon++;
-                stats.score++;  // Award 1 point for winning
                 if (isImposter) {
                     stats.timesImposterWon++;
                 }
             }
+            
+            // Update score to match games won (simple 1 point per win)
+            stats.score = stats.gamesWon;
         });
 
         this.saveGameToHistory();
