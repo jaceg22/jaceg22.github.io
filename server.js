@@ -358,7 +358,7 @@ class GameRoom {
             location: this.gameState.location,
             imposter: this.players.get(this.gameState.imposter).name
         };
-
+    
         // Update final game stats
         this.players.forEach((player, socketId) => {
             const stats = this.scoreboard.get(socketId);
@@ -368,24 +368,22 @@ class GameRoom {
             
             if (didWin) {
                 stats.gamesWon++;
-                stats.score = stats.gamesWon; // Update score directly here
                 if (isImposter) {
                     stats.timesImposterWon++;
                 }
             }
         });
-
-        // Save game to history but don't call updateScoreboard (already updated above)
+    
+        // Update scores based on games won (only once)
+        this.updateScoreboard();
         this.saveGameToHistory();
         
         console.log(`Game state after ending: status=${this.gameState.status}, winner=${winner}`);
     }
-
+    
     updateScoreboard() {
-        // Simple scoring: winners get +1 point (only calculate once at game end)
-        this.scoreboard.forEach((stats, socketId) => {
-            // Keep existing score calculation - don't recalculate during the game
-            // Score only gets updated when gamesWon increases in endGame()
+        // Simply set score equal to games won (1 point per win)
+        this.scoreboard.forEach((stats) => {
             stats.score = stats.gamesWon;
         });
     }

@@ -1,1372 +1,763 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🕵️ The Mole - Multiplayer</title>
-    <script src="/socket.io/socket.io.js"></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e, #16213e);
-            color: white;
-            min-height: 100vh;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        .title {
-            text-align: center;
-            font-size: 3rem;
-            margin-bottom: 2rem;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-        }
-
-        .screen {
-            display: none;
-            animation: fadeIn 0.5s ease-in;
-        }
-
-        .screen.active {
-            display: block;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .card {
-            background: rgba(15, 52, 96, 0.8);
-            border-radius: 15px;
-            padding: 2rem;
-            margin: 1rem 0;
-            border: 2px solid rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-        }
-
-        .input-group {
-            margin: 1rem 0;
-        }
-
-        .input-group label {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-weight: bold;
-        }
-
-        .input-group input, .input-group select, .input-group textarea {
-            width: 100%;
-            padding: 12px;
-            border: none;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-            font-size: 1rem;
-        }
-
-        .input-group input::placeholder, .input-group textarea::placeholder {
-            color: rgba(255, 255, 255, 0.6);
-        }
-
-        .btn {
-            background: linear-gradient(45deg, #3498db, #2980b9);
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 1rem;
-            font-weight: bold;
-            transition: all 0.3s ease;
-            margin: 0.5rem;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(52, 152, 219, 0.4);
-        }
-
-        .btn-primary { background: linear-gradient(45deg, #27ae60, #2ecc71); }
-        .btn-danger { background: linear-gradient(45deg, #e74c3c, #c0392b); }
-        .btn-warning { background: linear-gradient(45deg, #f39c12, #e67e22); }
-        .btn-info { background: linear-gradient(45deg, #8e44ad, #9b59b6); }
-
-        .players-list {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-            margin: 1rem 0;
-        }
-
-        .player-card {
-            background: rgba(52, 73, 94, 0.8);
-            padding: 1rem;
-            border-radius: 10px;
-            text-align: center;
-            border: 2px solid transparent;
-            transition: all 0.3s ease;
-        }
-
-        .player-card.host {
-            border-color: #f39c12;
-        }
-
-        .player-card.ready {
-            border-color: #27ae60;
-        }
-
-        .player-card.current-turn {
-            border-color: #e74c3c;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-        }
-
-        .game-info {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 1rem;
-            margin: 1rem 0;
-        }
-
-        .info-card {
-            background: rgba(52, 73, 94, 0.6);
-            padding: 1rem;
-            border-radius: 10px;
-            text-align: center;
-        }
-
-        .question-section {
-            background: rgba(26, 26, 46, 0.8);
-            padding: 1.5rem;
-            border-radius: 10px;
-            margin: 1rem 0;
-        }
-
-        .ready-to-vote-section {
-            background: rgba(241, 196, 15, 0.2);
-            border: 2px solid #f1c40f;
-            border-radius: 10px;
-            padding: 15px;
-            margin: 15px 0;
-            text-align: center;
-        }
-
-        .ready-to-vote-section p {
-            margin: 0 0 10px 0;
-            font-weight: bold;
-            color: #f1c40f;
-        }
-
-        .ready-to-vote-section .ready-count {
-            font-size: 1.2em;
-            color: #fff;
-            margin: 10px 0;
-        }
-
-        .game-log {
-            background: rgba(52, 73, 94, 0.4);
-            padding: 1rem;
-            border-radius: 10px;
-            height: 300px;
-            overflow-y: auto;
-            margin: 1rem 0;
-            font-family: monospace;
-            font-size: 0.9rem;
-        }
-
-        .log-entry {
-            margin: 0.5rem 0;
-            padding: 0.5rem;
-            border-radius: 5px;
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        .voting-section {
-            background: rgba(231, 76, 60, 0.2);
-            padding: 1.5rem;
-            border-radius: 10px;
-            margin: 1rem 0;
-            border: 2px solid rgba(231, 76, 60, 0.5);
-        }
-
-        .locations-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 0.5rem;
-            margin: 1rem 0;
-            font-size: 0.9rem;
-        }
-
-        .location-item {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 0.5rem;
-            border-radius: 5px;
-            text-align: center;
-        }
-
-        .error {
-            background: rgba(231, 76, 60, 0.2);
-            border: 1px solid #e74c3c;
-            color: #e74c3c;
-            padding: 1rem;
-            border-radius: 8px;
-            margin: 1rem 0;
-        }
-
-        .success {
-            background: rgba(39, 174, 96, 0.2);
-            border: 1px solid #27ae60;
-            color: #27ae60;
-            padding: 1rem;
-            border-radius: 8px;
-            margin: 1rem 0;
-        }
-
-        .role-display {
-            font-size: 1.2rem;
-            font-weight: bold;
-            padding: 1rem;
-            border-radius: 10px;
-            text-align: center;
-            margin: 1rem 0;
-        }
-
-        .role-imposter {
-            background: rgba(231, 76, 60, 0.3);
-            border: 2px solid #e74c3c;
-            color: #e74c3c;
-        }
-
-        .role-location {
-            background: rgba(39, 174, 96, 0.3);
-            border: 2px solid #27ae60;
-            color: #27ae60;
-        }
-
-        .scoreboard {
-            background: rgba(15, 52, 96, 0.8);
-            border-radius: 15px;
-            padding: 1.5rem;
-            margin: 1rem 0;
-            border: 2px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .scoreboard-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 1rem;
-        }
-
-        .scoreboard-table th,
-        .scoreboard-table td {
-            padding: 0.75rem;
-            text-align: left;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .scoreboard-table th {
-            background: rgba(255, 255, 255, 0.1);
-            font-weight: bold;
-            text-transform: uppercase;
-            font-size: 0.9rem;
-        }
-
-        .scoreboard-table tr:hover {
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        .rank {
-            font-weight: bold;
-            color: #f39c12;
-        }
-
-        .rank.first { color: #f1c40f; }
-        .rank.second { color: #95a5a6; }
-        .rank.third { color: #e67e22; }
-
-        .player-name {
-            font-weight: bold;
-        }
-
-        .player-name.offline {
-            opacity: 0.6;
-            font-style: italic;
-        }
-
-        .score {
-            font-weight: bold;
-            color: #27ae60;
-            font-size: 1.1rem;
-        }
-
-        .scoreboard-tabs {
-            display: flex;
-            margin-bottom: 1rem;
-        }
-
-        .tab-btn {
-            background: rgba(255, 255, 255, 0.1);
-            border: none;
-            color: white;
-            padding: 0.75rem 1.5rem;
-            cursor: pointer;
-            border-radius: 8px 8px 0 0;
-            margin-right: 0.5rem;
-            transition: all 0.3s ease;
-        }
-
-        .tab-btn.active {
-            background: rgba(52, 152, 219, 0.6);
-        }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        .game-history {
-            max-height: 300px;
-            overflow-y: auto;
-        }
-
-        .history-item {
-            background: rgba(255, 255, 255, 0.05);
-            padding: 1rem;
-            margin: 0.5rem 0;
-            border-radius: 8px;
-            border-left: 4px solid #3498db;
-        }
-
-        .round-summary {
-            background: rgba(39, 174, 96, 0.2);
-            padding: 1rem;
-            border-radius: 8px;
-            margin: 1rem 0;
-            border: 1px solid rgba(39, 174, 96, 0.4);
-        }
-
-        .round-summary h4 {
-            color: #27ae60;
-            margin-bottom: 0.5rem;
-        }
-
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.8);
-            z-index: 1000;
-        }
-
-        .modal.active {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal-content {
-            background: linear-gradient(135deg, #1a1a2e, #16213e);
-            padding: 2rem;
-            border-radius: 15px;
-            max-width: 500px;
-            width: 90%;
-            max-height: 80vh;
-            overflow-y: auto;
-        }
-
-        .modal-content.large {
-            max-width: 800px;
-        }
-
-        @media (max-width: 768px) {
-            .title {
-                font-size: 2rem;
-            }
-            
-            .container {
-                padding: 10px;
-            }
-            
-            .game-info {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1 class="title">🕵️ THE MOLE - Multiplayer</h1>
-
-        <!-- Home Screen -->
-        <div id="home-screen" class="screen active">
-            <div class="card">
-                <h2>Welcome to The Mole!</h2>
-                <p>Find the imposter among your friends in this exciting deduction game.</p>
-                
-                <div class="input-group">
-                    <label>Your Name:</label>
-                    <input type="text" id="player-name" placeholder="Enter your name" maxlength="20">
-                </div>
-
-                <div style="text-align: center;">
-                    <button class="btn btn-primary" onclick="createRoom()">🎮 Create Room</button>
-                    <button class="btn btn-warning" onclick="showJoinRoom()">🚪 Join Room</button>
-                </div>
-
-                <div id="join-room-section" style="display: none; margin-top: 1rem;">
-                    <div class="input-group">
-                        <label>Room Code:</label>
-                        <input type="text" id="room-code" placeholder="Enter room code" maxlength="6">
-                    </div>
-                    <button class="btn btn-primary" onclick="joinRoom()">Join</button>
-                </div>
-            </div>
-
-            <div class="card">
-                <h3>📍 Possible Locations:</h3>
-                <div class="locations-grid" id="locations-list"></div>
-            </div>
-        </div>
-
-        <!-- Lobby Screen -->
-        <div id="lobby-screen" class="screen">
-            <div class="card">
-                <h2>Room: <span id="room-display"></span></h2>
-                <div id="lobby-players" class="players-list"></div>
-                
-                <div style="text-align: center; margin-top: 2rem;">
-                    <button id="ready-btn" class="btn btn-warning" onclick="toggleReady()">Ready Up</button>
-                    <button id="start-btn" class="btn btn-primary" onclick="startGame()" style="display: none;">🎮 Start Game</button>
-                    <button id="custom-locations-btn" class="btn btn-info" onclick="showCustomLocations()" style="display: none;">🎯 Custom Locations</button>
-                    <button class="btn btn-info" onclick="showScoreboard()">📊 Scoreboard</button>
-                </div>
-            </div>
-
-            <!-- Lobby Scoreboard -->
-            <div class="scoreboard">
-                <h3>🏆 Room Scoreboard</h3>
-                <div id="lobby-scoreboard-content">
-                    <p>No games played yet. Start your first game!</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Game Screen -->
-        <div id="game-screen" class="screen">
-            <div class="game-info">
-                <div class="info-card">
-                    <h3>Game Status</h3>
-                    <p>Round: <span id="current-round">1</span></p>
-                    <p>Questions: <span id="questions-count">0/5</span></p>
-                    <p>Turn: <span id="current-turn">-</span></p>
-                </div>
-                
-                <div class="info-card">
-                    <h3>Players</h3>
-                    <div id="game-players" class="players-list"></div>
-                </div>
-            </div>
-
-            <div id="role-display" class="role-display"></div>
-
-            <div class="question-section">
-                <h3>❓ Current Question</h3>
-                <div id="current-question" style="margin: 1rem 0; font-style: italic;">Waiting for question...</div>
-                
-                <div id="ask-section" style="display: none;">
-                    <div class="input-group">
-                        <label>Ask:</label>
-                        <select id="target-select">
-                            <option value="">Select player to ask</option>
-                        </select>
-                    </div>
-                    <button class="btn btn-primary" onclick="askQuestion()">🎲 Ask Random Question</button>
-                </div>
-
-                <div id="imposter-reveal-section" style="display: none;">
-                    <button class="btn btn-danger" onclick="showImposterReveal()">🎭 Reveal as Imposter</button>
-                </div>
-            </div>
-
-            <!-- Ready to Vote Section -->
-            <div id="ready-to-vote-section" class="ready-to-vote-section" style="display: none;">
-                <p>🗳️ Ready to start voting?</p>
-                <div class="ready-count" id="ready-count-display">0 players ready</div>
-                <p>At least <span id="required-count">2</span> players need to be ready before voting begins.</p>
-                <button id="ready-to-vote-btn" class="btn btn-warning" onclick="readyToVote()">I'm Ready to Vote!</button>
-            </div>
-
-            <div id="voting-section" class="voting-section" style="display: none;">
-                <h3>🗳️ Vote for the Imposter</h3>
-                <p>Choose who you think is the imposter, or select "Not Ready" if you need more time:</p>
-                <div id="vote-options"></div>
-            </div>
-
-            <!-- In-Game Scoreboard -->
-            <div class="scoreboard">
-                <h3>📊 Current Scores</h3>
-                <div id="game-scoreboard-content"></div>
-                <button class="btn btn-info" onclick="showScoreboard()">View Full Scoreboard</button>
-            </div>
-
-            <div class="game-log" id="game-log"></div>
-        </div>
-
-        <!-- Game Over Screen -->
-        <div id="game-over-screen" class="screen">
-            <div class="card">
-                <h2>🏁 Game Over!</h2>
-                <div id="game-result"></div>
-                <div id="game-summary"></div>
-                <button class="btn btn-primary" onclick="backToLobby()">Back to Lobby</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modals -->
-    <div id="answer-modal" class="modal">
-        <div class="modal-content">
-            <h3>Answer the Question</h3>
-            <div id="modal-question"></div>
-            <div class="input-group">
-                <label>Your Answer:</label>
-                <textarea id="answer-input" rows="4" placeholder="Type your answer here..."></textarea>
-            </div>
-            <button class="btn btn-primary" onclick="submitAnswer()">Submit Answer</button>
-        </div>
-    </div>
-
-    <div id="imposter-modal" class="modal">
-        <div class="modal-content">
-            <h3>🎭 Imposter Reveal!</h3>
-            <p>You're revealing as the imposter. What location do you think it is?</p>
-            <div class="input-group">
-                <label>Location Guess:</label>
-                <select id="location-guess">
-                    <option value="">Select location</option>
-                </select>
-            </div>
-            <button class="btn btn-danger" onclick="submitImposterReveal()">Submit Guess</button>
-        </div>
-    </div>
-
-    <div id="scoreboard-modal" class="modal">
-        <div class="modal-content large">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                <h3>🏆 Detailed Scoreboard</h3>
-                <button class="btn btn-warning" onclick="hideScoreboard()" style="margin-left: auto;">✕ Close</button>
-            </div>
-            
-            <div class="scoreboard-tabs">
-                <button class="tab-btn active" onclick="switchTab('current')">Current Scores</button>
-                <button class="tab-btn" onclick="switchTab('history')">Game History</button>
-                <button class="tab-btn" onclick="switchTab('stats')">Detailed Stats</button>
-            </div>
-
-            <div id="current-tab" class="tab-content active">
-                <div id="detailed-scoreboard"></div>
-            </div>
-
-            <div id="history-tab" class="tab-content">
-                <div id="game-history-content"></div>
-            </div>
-
-            <div id="stats-tab" class="tab-content">
-                <div id="detailed-stats-content"></div>
-            </div>
-        </div>
-    </div>
-
-    <div id="custom-locations-modal" class="modal">
-        <div class="modal-content">
-            <h3>🎯 Custom Locations</h3>
-            <p>Enter your custom locations separated by commas. Leave empty to use default locations.</p>
-            <div class="input-group">
-                <label>Custom Locations:</label>
-                <textarea id="custom-locations-input" rows="6" placeholder="Space Station, Underwater Lab, Haunted House, Secret Base, etc."></textarea>
-            </div>
-            <div style="text-align: center;">
-                <button class="btn btn-primary" onclick="setCustomLocations()">Set Custom Locations</button>
-                <button class="btn btn-warning" onclick="hideCustomLocations()">Cancel</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="round-summary-modal" class="modal">
-        <div class="modal-content">
-            <h3>📊 Round Summary</h3>
-            <div id="round-summary-content"></div>
-            <button class="btn btn-primary" onclick="hideRoundSummary()">Continue</button>
-        </div>
-    </div>
-
-    <script>
-        const socket = io();
-        let gameState = {};
-        let currentRoom = '';
-        let isHost = false;
-        let playerName = '';
-        let isReady = false;
-        let scoreboardData = [];
-        let gameHistory = [];
-        let roundEndScoreboard = null;
-        let hasClickedReadyToVote = false; // Track if player has clicked ready to vote
-        let customLocations = []; // Track custom locations set by host
-
-        const locations = [
-            "Circus", "Amusement Park", "Crashing Airplane", "Titanic",
-            "Burning Orphanage", "Dingy Motel Drug Deal", "Prison", "Safari",
-            "Zombie Apocalypse", "Organ-Harvesting Hospital", "Nuclear Submarine",
-            "Daycare", "Amazon Rainforest", "Concert Hall", "Space Station",
-            "Underwater Research Lab", "Haunted Mansion", "Art Museum"
-        ];
-
-        // Initialize locations display
-        document.addEventListener('DOMContentLoaded', () => {
-            const locationsList = document.getElementById('locations-list');
-            locations.forEach(location => {
-                const div = document.createElement('div');
-                div.className = 'location-item';
-                div.textContent = location;
-                locationsList.appendChild(div);
-            });
-
-            // Populate imposter modal locations
-            const locationGuessSelect = document.getElementById('location-guess');
-            locations.forEach(location => {
-                const option = document.createElement('option');
-                option.value = location;
-                option.textContent = location;
-                locationGuessSelect.appendChild(option);
-            });
+const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
+const path = require('path');
+
+const app = express();
+const server = http.createServer(app);
+const io = socketIo(server);
+
+// Serve static files
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Game configuration
+const defaultLocations = [
+    "Circus", "Amusement Park", "Crashing Airplane", "Titanic",
+    "Burning Orphanage", "Dingy Motel Drug Deal", "Prison", "Safari",
+    "Zombie Apocalypse", "Organ-Harvesting Hospital", "Nuclear Submarine",
+    "Daycare", "Amazon Rainforest", "Concert Hall", "Space Station",
+    "Underwater Research Lab", "Haunted Mansion", "Art Museum"
+];
+
+const questions = [
+    "Would you expect to see me here?",
+    "What is the last thing you said?",
+    "Would you be scared if someone was near you?",
+    "What do you see around you?",
+    "What do you think of the food?",
+    "What's that smell?",
+    "What's that noise?",
+    "What is the price of admission?",
+    "What time of day is it here?",
+    "Who else might you meet here?",
+    "Would you want to take a picture here?",
+    "What kind of clothing would you wear here?",
+    "How long would you stay here?",
+    "What is the weather like?",
+    "What did you bring with you?",
+    "How would you describe the vibe?",
+    "Would you need a ticket to enter?",
+    "Do you feel safe here?",
+    "What language do people speak here?",
+    "What type of transportation would you use to get here?",
+    "What celebrity would you expect to meet here?",
+    "What is everyone wearing?",
+    "What is this place's motto?",
+    "Would you take a date here?",
+    "What is the floor made out of?",
+    "If you were an actor, who would you be?",
+    "Where's a good place to smoke around here?",
+    "What do you think would happen if I touched this button?",
+    "How stressed are people around here?",
+    "If Taylor Swift were here, what would she be doing?",
+    "Is your family here?",
+    "Do you find the people here attractive?",
+    "What animal is that?",
+    "What's in that corner?",
+    "Why are they whispering?",
+    "How's your phone reception?",
+    "What's the seating situation like around here?",
+    "Are any crimes being committed here?"
+];
+
+// Store game rooms
+const gameRooms = new Map();
+
+class GameRoom {
+    constructor(roomCode) {
+        this.roomCode = roomCode;
+        this.players = new Map(); // socketId -> {name, isHost, isReady}
+        this.gameState = {
+            status: 'waiting', // waiting, playing, voting, ended
+            location: null,
+            imposter: null,
+            currentRound: 1,
+            currentTurn: 0,
+            questionsThisRound: 0,
+            questionsPerRound: null, // Will be set to number of players
+            questionQueue: [...questions],
+            gameHistory: [],
+            votes: new Map(),
+            playerAnswers: new Map(),
+            currentQuestion: null, // Track the current question being asked
+            readyToVoteCount: 0, // Track how many players are ready to vote
+            readyToVotePlayers: new Set() // Track which players clicked ready
+        };
+        this.playerOrder = [];
+        this.scoreboard = new Map(); // socketId -> player stats
+        this.gameHistory = []; // Track all games in this room
+        this.customLocations = []; // Store custom locations set by host
+    }
+
+    addPlayer(socketId, name, isHost = false) {
+        this.players.set(socketId, {
+            name,
+            isHost,
+            isReady: false,
+            role: null // Will be 'imposter' or the location name
         });
-
-        // Screen management
-        function showScreen(screenId) {
-            document.querySelectorAll('.screen').forEach(screen => {
-                screen.classList.remove('active');
-            });
-            document.getElementById(screenId).classList.add('active');
+        
+        // Initialize scoreboard for new player
+        this.scoreboard.set(socketId, {
+            name,
+            gamesPlayed: 0,
+            gamesWon: 0,
+            timesImposter: 0,
+            timesImposterWon: 0,
+            questionsAnswered: 0,
+            questionsAsked: 0,
+            correctVotes: 0,
+            totalVotes: 0,
+            roundsSurvived: 0,
+            score: 0
+        });
+        
+        if (isHost) {
+            this.hostId = socketId;
         }
+    }
 
-        function showModal(modalId) {
-            document.getElementById(modalId).classList.add('active');
+    removePlayer(socketId) {
+        const player = this.players.get(socketId);
+        this.players.delete(socketId);
+        // Keep scoreboard data for returning players
+        
+        // If host left, assign new host
+        if (socketId === this.hostId && this.players.size > 0) {
+            const newHost = this.players.keys().next().value;
+            this.players.get(newHost).isHost = true;
+            this.hostId = newHost;
         }
+        
+        return player;
+    }
 
-        function hideModal(modalId) {
-            document.getElementById(modalId).classList.remove('active');
-        }
+    setCustomLocations(locations) {
+        this.customLocations = locations;
+    }
 
-        // Room management
-        function createRoom() {
-            playerName = document.getElementById('player-name').value.trim();
-            if (!playerName) {
-                showError('Please enter your name');
-                return;
-            }
-            socket.emit('create_room', playerName);
-        }
+    getLocations() {
+        return this.customLocations.length > 0 ? this.customLocations : defaultLocations;
+    }
 
-        function showJoinRoom() {
-            document.getElementById('join-room-section').style.display = 'block';
-        }
-
-        function joinRoom() {
-            playerName = document.getElementById('player-name').value.trim();
-            const roomCode = document.getElementById('room-code').value.trim().toUpperCase();
+    startGame() {
+        if (this.players.size < 3) return false;
+        
+        // Shuffle players and assign roles
+        this.playerOrder = Array.from(this.players.keys());
+        this.shuffleArray(this.playerOrder);
+        
+        // Choose location and imposter
+        const locations = this.getLocations();
+        this.gameState.location = locations[Math.floor(Math.random() * locations.length)];
+        const imposterIndex = Math.floor(Math.random() * this.playerOrder.length);
+        this.gameState.imposter = this.playerOrder[imposterIndex];
+        
+        console.log(`Game started in room ${this.roomCode}:`);
+        console.log(`Location: ${this.gameState.location}`);
+        console.log(`Imposter: ${this.players.get(this.gameState.imposter).name}`);
+        
+        // Update scoreboard - increment games played and times imposter
+        this.players.forEach((player, socketId) => {
+            const stats = this.scoreboard.get(socketId);
+            stats.gamesPlayed++;
             
-            if (!playerName || !roomCode) {
-                showError('Please enter your name and room code');
-                return;
-            }
-            
-            socket.emit('join_room', { roomCode, playerName });
-        }
-
-        function toggleReady() {
-            socket.emit('toggle_ready');
-        }
-
-        function startGame() {
-            if (!isHost) return;
-            
-            // Send custom locations if they exist
-            if (customLocations.length > 0) {
-                socket.emit('start_game', { customLocations });
+            if (socketId === this.gameState.imposter) {
+                player.role = 'imposter';
+                stats.timesImposter++;
             } else {
-                socket.emit('start_game');
+                player.role = this.gameState.location;
             }
+        });
+        
+        // Initialize game state
+        this.gameState.status = 'playing';
+        this.gameState.currentTurn = 0;
+        this.gameState.questionsThisRound = 0;
+        this.gameState.questionsPerRound = this.players.size; // One question per player per round
+        this.gameState.gameHistory = [];
+        this.gameState.votes.clear();
+        this.gameState.playerAnswers.clear();
+        this.gameState.currentQuestion = null;
+        this.gameState.readyToVoteCount = 0;
+        this.gameState.readyToVotePlayers.clear();
+        
+        // Shuffle question queue
+        this.shuffleArray(this.gameState.questionQueue);
+        
+        return true;
+    }
+
+    shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+    }
+
+    getCurrentPlayer() {
+        return this.playerOrder[this.gameState.currentTurn];
+    }
+
+    getNextQuestion() {
+        if (this.gameState.questionQueue.length === 0) {
+            this.gameState.questionQueue = [...questions];
+            this.shuffleArray(this.gameState.questionQueue);
+        }
+        return this.gameState.questionQueue.shift();
+    }
+
+    processAnswer(askerId, targetId, question, answer) {
+        console.log(`Processing answer in room ${this.roomCode}:`);
+        console.log(`Asker: ${this.players.get(askerId).name}, Target: ${this.players.get(targetId).name}`);
+        console.log(`Question: ${question}, Answer: ${answer}`);
+        
+        // Add to game history
+        this.gameState.gameHistory.push({
+            asker: this.players.get(askerId).name,
+            target: this.players.get(targetId).name,
+            question,
+            answer,
+            round: this.gameState.currentRound
+        });
+
+        // Update scoreboard
+        const askerStats = this.scoreboard.get(askerId);
+        const targetStats = this.scoreboard.get(targetId);
+        askerStats.questionsAsked++;
+        targetStats.questionsAnswered++;
+
+        // Track player answers
+        const targetName = this.players.get(targetId).name;
+        if (!this.gameState.playerAnswers.has(targetName)) {
+            this.gameState.playerAnswers.set(targetName, []);
+        }
+        this.gameState.playerAnswers.get(targetName).push(answer);
+
+        // Move to next turn
+        this.gameState.questionsThisRound++;
+        this.gameState.currentTurn = (this.gameState.currentTurn + 1) % this.playerOrder.length;
+        this.gameState.currentQuestion = null; // Clear current question
+
+        console.log(`Questions this round: ${this.gameState.questionsThisRound}/${this.gameState.questionsPerRound}`);
+        console.log(`Next turn: ${this.gameState.currentTurn} (${this.players.get(this.getCurrentPlayer()).name})`);
+
+        // Don't automatically start voting after round completion
+        // Voting only starts when players are ready
+    }
+
+    readyToVote(playerId) {
+        if (this.gameState.readyToVotePlayers.has(playerId)) {
+            console.log(`Player ${this.players.get(playerId).name} already marked ready to vote`);
+            return; // Player already marked ready
         }
 
-        // Game functions
-        function askQuestion() {
-            const targetId = document.getElementById('target-select').value;
-            if (!targetId) {
-                showError('Please select a player to ask');
-                return;
+        this.gameState.readyToVotePlayers.add(playerId);
+        this.gameState.readyToVoteCount++;
+        
+        console.log(`${this.players.get(playerId).name} is ready to vote. Count: ${this.gameState.readyToVoteCount}/${this.players.size - 1}`);
+
+        // Check if enough players are ready (all except one)
+        if (this.gameState.readyToVoteCount >= this.players.size - 1) {
+            console.log('Enough players ready, starting voting phase');
+            this.startVoting();
+        }
+    }
+
+    startVoting() {
+        this.gameState.status = 'voting';
+        this.gameState.votes.clear();
+        console.log(`Voting started in room ${this.roomCode}`);
+    }
+
+    submitVote(voterId, targetId) {
+        // Prevent players from voting for themselves
+        if (voterId === targetId) {
+            console.log(`Player ${this.players.get(voterId).name} tried to vote for themselves - ignored`);
+            return;
+        }
+        
+        console.log(`Vote submitted: ${this.players.get(voterId).name} votes for ${this.players.get(targetId)?.name || 'Unknown'}`);
+        this.gameState.votes.set(voterId, targetId);
+        
+        // Update voting stats
+        const voterStats = this.scoreboard.get(voterId);
+        voterStats.totalVotes++;
+        
+        // Check if all players have voted
+        if (this.gameState.votes.size === this.players.size) {
+            console.log('All votes received, processing results');
+            this.processVotingResults();
+        }
+    }
+
+    processVotingResults() {
+        // Count votes
+        const voteCounts = new Map();
+        
+        this.gameState.votes.forEach((targetId) => {
+            const count = voteCounts.get(targetId) || 0;
+            voteCounts.set(targetId, count + 1);
+        });
+
+        console.log('Vote counts:', Array.from(voteCounts.entries()).map(([id, count]) => 
+            `${this.players.get(id)?.name || 'Unknown'}: ${count}`
+        ));
+
+        // Find player with most votes
+        let maxVotes = 0;
+        let mostVoted = null;
+        voteCounts.forEach((count, playerId) => {
+            if (count > maxVotes) {
+                maxVotes = count;
+                mostVoted = playerId;
             }
-            socket.emit('ask_question', { targetId });
-        }
+        });
 
-        function submitAnswer() {
-            const answer = document.getElementById('answer-input').value.trim();
-            if (!answer) {
-                showError('Please provide an answer');
-                return;
-            }
-
-            const { asker, target, question } = gameState.currentQuestion;
-            socket.emit('submit_answer', { asker, target, question, answer });
+        // Need at least (players - 1) votes for someone to be eliminated
+        const requiredVotes = this.players.size - 1;
+        console.log(`Required votes: ${requiredVotes}, Max votes: ${maxVotes}`);
+        
+        if (maxVotes >= requiredVotes && mostVoted) {
+            // Someone got enough votes to be eliminated
+            const wasImposter = mostVoted === this.gameState.imposter;
+            console.log(`${this.players.get(mostVoted).name} got enough votes. Was imposter: ${wasImposter}`);
             
-            document.getElementById('answer-input').value = '';
-            hideModal('answer-modal');
-        }
-
-        function readyToVote() {
-            if (hasClickedReadyToVote) {
-                showError('You have already indicated you are ready to vote');
-                return;
-            }
-            
-            socket.emit('ready_to_vote');
-            hasClickedReadyToVote = true;
-            
-            // Update button to show they've clicked it
-            const btn = document.getElementById('ready-to-vote-btn');
-            btn.textContent = 'Ready! Waiting for others...';
-            btn.disabled = true;
-            btn.className = 'btn btn-primary';
-        }
-
-        function submitVote(targetId) {
-            console.log('Submitting vote for:', targetId);
-            socket.emit('submit_vote', { targetId });
-            document.getElementById('voting-section').style.display = 'none';
-        }
-
-        function showImposterReveal() {
-            showModal('imposter-modal');
-        }
-
-        function submitImposterReveal() {
-            const locationGuess = document.getElementById('location-guess').value;
-            if (!locationGuess) {
-                showError('Please select a location');
-                return;
-            }
-            
-            socket.emit('imposter_reveal', { locationGuess });
-            hideModal('imposter-modal');
-        }
-
-        function backToLobby() {
-            showScreen('lobby-screen');
-            // Reset game state
-            gameState = {};
-            hasClickedReadyToVote = false;
-            // Request updated scoreboard
-            socket.emit('request_scoreboard');
-        }
-
-        // Scoreboard functions
-        function showScoreboard() {
-            socket.emit('request_scoreboard');
-            showModal('scoreboard-modal');
-        }
-
-        function hideScoreboard() {
-            hideModal('scoreboard-modal');
-        }
-
-        function switchTab(tabName) {
-            // Update tab buttons
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-            document.querySelector(`.tab-btn:nth-child(${tabName === 'current' ? 1 : tabName === 'history' ? 2 : 3})`).classList.add('active');
-            
-            // Update tab content
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-            document.getElementById(`${tabName}-tab`).classList.add('active');
-        }
-
-        function showRoundSummary(summaryData) {
-            document.getElementById('round-summary-content').innerHTML = summaryData;
-            showModal('round-summary-modal');
-        }
-
-        function hideRoundSummary() {
-            hideModal('round-summary-modal');
-        }
-
-        // Custom locations functions
-        function showCustomLocations() {
-            showModal('custom-locations-modal');
-        }
-
-        function hideCustomLocations() {
-            hideModal('custom-locations-modal');
-        }
-
-        function setCustomLocations() {
-            const input = document.getElementById('custom-locations-input').value.trim();
-            
-            if (input) {
-                // Parse comma-separated locations and clean them up
-                customLocations = input.split(',')
-                    .map(loc => loc.trim())
-                    .filter(loc => loc.length > 0);
-                
-                if (customLocations.length < 3) {
-                    showError('Please provide at least 3 custom locations');
-                    return;
-                }
-                
-                showSuccess(`Custom locations set: ${customLocations.length} locations`);
+            if (wasImposter) {
+                // Location team correctly identified imposter - only location team wins
+                this.endGame('location_wins', `${this.players.get(mostVoted).name} was correctly identified as the imposter!`);
             } else {
-                customLocations = [];
-                showSuccess('Using default locations');
+                // Location team voted wrong person - only imposter wins
+                this.endGame('imposter_wins', `${this.players.get(mostVoted).name} was innocent. The imposter wins!`);
             }
-            
-            hideCustomLocations();
+        } else {
+            // Votes were too spread out - location team failed to coordinate, only imposter wins
+            console.log('Votes too spread out, imposter wins by default');
+            this.endGame('imposter_wins', `Location team failed to coordinate their votes. The imposter wins!`);
         }
+    }
 
-        // Socket event handlers
-        socket.on('room_created', (data) => {
-            currentRoom = data.roomCode;
-            isHost = data.isHost;
-            document.getElementById('room-display').textContent = currentRoom;
-            showScreen('lobby-screen');
-            showSuccess(`Room created! Code: ${currentRoom}`);
-        });
-
-        socket.on('room_joined', (data) => {
-            currentRoom = data.roomCode;
-            isHost = data.isHost;
-            document.getElementById('room-display').textContent = currentRoom;
-            showScreen('lobby-screen');
-            showSuccess(`Joined room: ${currentRoom}`);
-        });
-
-        socket.on('room_updated', (data) => {
-            updateLobbyPlayers(data.players);
-            if (data.scoreboard) {
-                updateLobbyScoreboard(data.scoreboard);
-            }
-        });
-
-        socket.on('player_left', (data) => {
-            showInfo(`${data.playerName} left the room`);
-            updateLobbyPlayers(data.players);
-            if (data.scoreboard) {
-                updateLobbyScoreboard(data.scoreboard);
-            }
-        });
-
-        socket.on('game_started', (data) => {
-            gameState = data;
-            hasClickedReadyToVote = false; // Reset for new game
-            if (data.scoreboard) {
-                scoreboardData = data.scoreboard;
-            }
-            showScreen('game-screen');
-            updateGameDisplay();
-            addToLog('🎮 Game started!');
-            
-            if (data.isImposter) {
-                addToLog('🎭 You are the IMPOSTER!');
-            } else {
-                addToLog(`📍 Location: ${data.playerRole}`);
-            }
-        });
-
-        socket.on('question_asked', (data) => {
-            gameState.currentQuestion = data;
-            document.getElementById('current-question').innerHTML = 
-                `<strong>${data.asker}</strong> asks <strong>${data.target}</strong>: "${data.question}"`;
-            
-            addToLog(`❓ ${data.asker} asks ${data.target}: ${data.question}`);
-            
-            // If this player is the target, show answer modal
-            if (data.targetId === socket.id) {
-                document.getElementById('modal-question').innerHTML = 
-                    `<strong>${data.asker}</strong> asks: "${data.question}"`;
-                showModal('answer-modal');
-                document.getElementById('answer-input').focus();
-            }
-        });
-
-        socket.on('answer_submitted', (data) => {
-            addToLog(`💬 ${data.target}: ${data.answer}`);
-        });
-
-        socket.on('game_updated', (data) => {
-            console.log('Game updated:', data.status, 'Round:', data.currentRound, 'Current turn:', data.currentTurn);
-            gameState = { ...gameState, ...data };
-            if (data.scoreboard) {
-                scoreboardData = data.scoreboard;
-            }
-            updateGameDisplay();
-            
-            if (data.status === 'voting') {
-                showVotingSection();
-            } else if (data.status === 'ended') {
-                showGameOver();
-            }
-        });
-
-        socket.on('vote_submitted', (data) => {
-            addToLog(`🗳️ ${data.voter} voted (${data.votesReceived}/${data.totalPlayers})`);
-            
-            // Store scoreboard for round summary when voting completes
-            if (data.votesReceived === data.totalPlayers) {
-                roundEndScoreboard = {
-                    round: gameState.currentRound,
-                    scoreboard: [...scoreboardData]
-                };
-            }
-        });
-
-        socket.on('ready_count_updated', (data) => {
-            addToLog(`🗳️ ${data.readyCount}/${data.requiredCount} players ready to vote`);
-            
-            // Update the ready count display
-            if (gameState.status === 'playing') {
-                gameState.readyToVoteCount = data.readyCount;
-                updateGameDisplay();
-            }
-        });
-
-        socket.on('all_votes_received', () => {
-            addToLog('🗳️ All votes received! Processing results...');
-        });
-
-        socket.on('game_over', (result) => {
-            console.log('Game over event received:', result);
-            addToLog(`🏁 ${result.message}`);
-        });
-
-        socket.on('scoreboard_updated', (data) => {
-            scoreboardData = data.scoreboard || [];
-            gameHistory = data.gameHistory || [];
-            updateDetailedScoreboard();
-        });
-
-        socket.on('error', (message) => {
-            showError(message);
-        });
-
-        // UI update functions
-        function updateLobbyPlayers(players) {
-            const container = document.getElementById('lobby-players');
-            container.innerHTML = '';
-            
-            players.forEach(player => {
-                const div = document.createElement('div');
-                div.className = 'player-card';
-                if (player.isHost) div.classList.add('host');
-                if (player.isReady) div.classList.add('ready');
-                
-                div.innerHTML = `
-                    <div><strong>${player.name}</strong></div>
-                    <div>${player.isHost ? '👑 Host' : (player.isReady ? '✅ Ready' : '⏳ Not Ready')}</div>
-                `;
-                container.appendChild(div);
-            });
-
-            // Update ready button
-            const readyBtn = document.getElementById('ready-btn');
-            const startBtn = document.getElementById('start-btn');
-            
-            if (isHost) {
-                const allReady = players.filter(p => !p.isHost).every(p => p.isReady);
-                const hasEnoughPlayers = players.length >= 3;
-                
-                startBtn.style.display = (allReady && hasEnoughPlayers) ? 'inline-block' : 'none';
-                document.getElementById('custom-locations-btn').style.display = 'inline-block';
-                readyBtn.style.display = 'none';
-            } else {
-                const currentPlayer = players.find(p => p.name === playerName);
-                readyBtn.textContent = currentPlayer?.isReady ? 'Cancel Ready' : 'Ready Up';
-                readyBtn.className = `btn ${currentPlayer?.isReady ? 'btn-warning' : 'btn-primary'}`;
-                startBtn.style.display = 'none';
-                document.getElementById('custom-locations-btn').style.display = 'none';
-            }
+    imposterReveal(locationGuess) {
+        console.log(`Imposter reveal: ${this.players.get(this.gameState.imposter).name} guessed ${locationGuess} (correct: ${this.gameState.location})`);
+        const wasCorrect = locationGuess === this.gameState.location;
+        
+        if (wasCorrect) {
+            this.endGame('imposter_wins', `Imposter correctly guessed the location: ${this.gameState.location}`);
+        } else {
+            this.endGame('location_wins', `Imposter guessed wrong! Location was ${this.gameState.location}, not ${locationGuess}`);
         }
+    }
 
-        function updateLobbyScoreboard(scoreboard) {
-            const container = document.getElementById('lobby-scoreboard-content');
+    endGame(winner, message) {
+        console.log(`Game ended in room ${this.roomCode}: ${winner} - ${message}`);
+        this.gameState.status = 'ended';
+        this.gameState.gameResult = {
+            winner,
+            message,
+            location: this.gameState.location,
+            imposter: this.players.get(this.gameState.imposter).name
+        };
+
+        // Update final game stats
+        this.players.forEach((player, socketId) => {
+            const stats = this.scoreboard.get(socketId);
+            const isImposter = socketId === this.gameState.imposter;
+            const didWin = (winner === 'imposter_wins' && isImposter) || 
+                          (winner === 'location_wins' && !isImposter);
             
-            if (!scoreboard || scoreboard.length === 0) {
-                container.innerHTML = '<p>No games played yet. Start your first game!</p>';
-                return;
-            }
-
-            const topPlayers = scoreboard.slice(0, 5);
-            let html = '<div class="scoreboard-table">';
-            html += '<table style="width: 100%;">';
-            html += '<thead><tr><th>Rank</th><th>Player</th><th>Score</th><th>Games Won</th></tr></thead>';
-            html += '<tbody>';
-            
-            topPlayers.forEach((player, index) => {
-                const rankClass = index === 0 ? 'first' : index === 1 ? 'second' : index === 2 ? 'third' : '';
-                const onlineStatus = player.isOnline ? '' : 'offline';
-                
-                html += `
-                    <tr>
-                        <td><span class="rank ${rankClass}">#${index + 1}</span></td>
-                        <td><span class="player-name ${onlineStatus}">${player.name}</span></td>
-                        <td><span class="score">${player.score}</span></td>
-                        <td>${player.gamesWon}/${player.gamesPlayed}</td>
-                    </tr>
-                `;
-            });
-            
-            html += '</tbody></table></div>';
-            container.innerHTML = html;
-        }
-
-        function updateGameDisplay() {
-            if (!gameState.playerOrder) return;
-
-            // Update game info
-            document.getElementById('current-round').textContent = gameState.currentRound || 1;
-            document.getElementById('questions-count').textContent = 
-                `${gameState.questionsThisRound || 0}/${gameState.questionsPerRound || 5}`;
-            
-            const currentPlayerIndex = gameState.currentTurn || 0;
-            const currentPlayer = gameState.playerOrder[currentPlayerIndex];
-            document.getElementById('current-turn').textContent = currentPlayer?.name || '-';
-
-            // Update role display
-            const roleDisplay = document.getElementById('role-display');
-            if (gameState.isImposter) {
-                roleDisplay.className = 'role-display role-imposter';
-                roleDisplay.innerHTML = '🎭 You are the IMPOSTER!<br>Find out the location!';
-                document.getElementById('imposter-reveal-section').style.display = 'block';
-            } else if (gameState.playerRole) {
-                roleDisplay.className = 'role-display role-location';
-                roleDisplay.innerHTML = `📍 Location: <strong>${gameState.playerRole}</strong><br>Find the imposter!`;
-                document.getElementById('imposter-reveal-section').style.display = 'none';
-            }
-
-            // Update players display
-            const playersContainer = document.getElementById('game-players');
-            playersContainer.innerHTML = '';
-            
-            gameState.playerOrder?.forEach((player, index) => {
-                const div = document.createElement('div');
-                div.className = 'player-card';
-                if (index === gameState.currentTurn) div.classList.add('current-turn');
-                
-                div.innerHTML = `<strong>${player.name}</strong>`;
-                playersContainer.appendChild(div);
-            });
-
-            // Update target selection
-            const targetSelect = document.getElementById('target-select');
-            targetSelect.innerHTML = '<option value="">Select player to ask</option>';
-            
-            gameState.playerOrder?.forEach(player => {
-                if (!player.isYou) {
-                    const option = document.createElement('option');
-                    option.value = player.id;
-                    option.textContent = player.name;
-                    targetSelect.appendChild(option);
-                }
-            });
-
-            // Show/hide ask section based on turn
-            const askSection = document.getElementById('ask-section');
-            const isMyTurn = gameState.playerOrder?.[gameState.currentTurn]?.isYou;
-            askSection.style.display = (isMyTurn && gameState.status === 'playing') ? 'block' : 'none';
-
-            // Show/hide ready to vote section
-            const readyToVoteSection = document.getElementById('ready-to-vote-section');
-            const readyCountDisplay = document.getElementById('ready-count-display');
-            const requiredCountSpan = document.getElementById('required-count');
-            const readyToVoteBtn = document.getElementById('ready-to-vote-btn');
-
-            if (gameState.status === 'playing' && gameState.questionsThisRound >= gameState.questionsPerRound) {
-                // Show ready to vote section when round is complete
-                readyToVoteSection.style.display = 'block';
-                
-                const readyCount = gameState.readyToVoteCount || 0;
-                const requiredCount = (gameState.playerOrder?.length || 2) - 1;
-                
-                readyCountDisplay.textContent = `${readyCount}/${requiredCount} players ready`;
-                requiredCountSpan.textContent = requiredCount;
-                
-                // Update button state based on whether player has clicked
-                if (hasClickedReadyToVote) {
-                    readyToVoteBtn.textContent = 'Ready! Waiting for others...';
-                    readyToVoteBtn.disabled = true;
-                    readyToVoteBtn.className = 'btn btn-primary';
-                } else {
-                    readyToVoteBtn.textContent = "I'm Ready to Vote!";
-                    readyToVoteBtn.disabled = false;
-                    readyToVoteBtn.className = 'btn btn-warning';
-                }
-            } else {
-                readyToVoteSection.style.display = 'none';
-            }
-
-            // Update in-game scoreboard
-            updateGameScoreboard();
-        }
-
-        function updateGameScoreboard() {
-            const container = document.getElementById('game-scoreboard-content');
-            
-            if (!scoreboardData || scoreboardData.length === 0) {
-                container.innerHTML = '<p>Scoreboard will update after the round...</p>';
-                return;
-            }
-
-            const topPlayers = scoreboardData.slice(0, 3);
-            let html = '';
-            
-            topPlayers.forEach((player, index) => {
-                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉';
-                const onlineStatus = player.isOnline ? '' : ' (offline)';
-                
-                html += `
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; background: rgba(255,255,255,0.05); margin: 0.25rem 0; border-radius: 5px;">
-                        <span>${medal} ${player.name}${onlineStatus}</span>
-                        <span class="score">${player.score}</span>
-                    </div>
-                `;
-            });
-            
-            container.innerHTML = html;
-        }
-
-        function updateDetailedScoreboard() {
-            // Update current scores tab
-            const currentTab = document.getElementById('detailed-scoreboard');
-            if (scoreboardData.length === 0) {
-                currentTab.innerHTML = '<p>No data available yet.</p>';
-            } else {
-                let html = '<table class="scoreboard-table">';
-                html += '<thead><tr><th>Rank</th><th>Player</th><th>Score</th><th>Games</th><th>Win Rate</th><th>Imposter Rate</th></tr></thead>';
-                html += '<tbody>';
-                
-                scoreboardData.forEach((player, index) => {
-                    const rankClass = index === 0 ? 'first' : index === 1 ? 'second' : index === 2 ? 'third' : '';
-                    const onlineStatus = player.isOnline ? '' : 'offline';
-                    const winRate = player.gamesPlayed > 0 ? ((player.gamesWon / player.gamesPlayed) * 100).toFixed(1) : '0';
-                    const imposterRate = player.timesImposter > 0 ? ((player.timesImposterWon / player.timesImposter) * 100).toFixed(1) : '0';
-                    
-                    html += `
-                        <tr>
-                            <td><span class="rank ${rankClass}">#${index + 1}</span></td>
-                            <td><span class="player-name ${onlineStatus}">${player.name}</span></td>
-                            <td><span class="score">${player.score}</span></td>
-                            <td>${player.gamesWon}/${player.gamesPlayed}</td>
-                            <td>${winRate}%</td>
-                            <td>${imposterRate}%</td>
-                        </tr>
-                    `;
-                });
-                
-                html += '</tbody></table>';
-                currentTab.innerHTML = html;
-            }
-
-            // Update game history tab
-            const historyTab = document.getElementById('game-history-content');
-            if (gameHistory.length === 0) {
-                historyTab.innerHTML = '<p>No games completed yet.</p>';
-            } else {
-                let html = '<div class="game-history">';
-                gameHistory.slice().reverse().forEach(game => {
-                    html += `
-                        <div class="history-item">
-                            <h4>Game #${game.gameNumber} - ${new Date(game.date).toLocaleString()}</h4>
-                            <p><strong>Location:</strong> ${game.location}</p>
-                            <p><strong>Imposter:</strong> ${game.imposter}</p>
-                            <p><strong>Winner:</strong> ${game.winner === 'imposter_wins' ? 'Imposter' : 'Location Team'}</p>
-                            <p><strong>Rounds:</strong> ${game.rounds}</p>
-                            <details>
-                                <summary>Final Scores</summary>
-                                ${game.finalScores.map(score => `<p>${score.name}: ${score.score}</p>`).join('')}
-                            </details>
-                        </div>
-                    `;
-                });
-                html += '</div>';
-                historyTab.innerHTML = html;
-            }
-
-            // Update detailed stats tab
-            const statsTab = document.getElementById('detailed-stats-content');
-            if (scoreboardData.length === 0) {
-                statsTab.innerHTML = '<p>No stats available yet.</p>';
-            } else {
-                let html = '<table class="scoreboard-table">';
-                html += '<thead><tr><th>Player</th><th>Questions Asked</th><th>Questions Answered</th><th>Vote Accuracy</th><th>Rounds Survived</th></tr></thead>';
-                html += '<tbody>';
-                
-                scoreboardData.forEach(player => {
-                    const voteAccuracy = player.totalVotes > 0 ? ((player.correctVotes / player.totalVotes) * 100).toFixed(1) : '0';
-                    const onlineStatus = player.isOnline ? '' : 'offline';
-                    
-                    html += `
-                        <tr>
-                            <td><span class="player-name ${onlineStatus}">${player.name}</span></td>
-                            <td>${player.questionsAsked}</td>
-                            <td>${player.questionsAnswered}</td>
-                            <td>${voteAccuracy}% (${player.correctVotes}/${player.totalVotes})</td>
-                            <td>${player.roundsSurvived}</td>
-                        </tr>
-                    `;
-                });
-                
-                html += '</tbody></table>';
-                statsTab.innerHTML = html;
-            }
-        }
-
-        function generateRoundSummary(roundData) {
-            let html = `<div class="round-summary">`;
-            html += `<h4>📊 Round ${roundData.round} Complete!</h4>`;
-            html += `<p>Here's how everyone performed this round:</p>`;
-            
-            html += '<table class="scoreboard-table" style="margin-top: 1rem;">';
-            html += '<thead><tr><th>Player</th><th>Score</th><th>Score Change</th></tr></thead>';
-            html += '<tbody>';
-            
-            roundData.scoreboard.forEach(player => {
-                const currentPlayer = scoreboardData.find(p => p.name === player.name);
-                const scoreChange = currentPlayer ? currentPlayer.score - player.score : 0;
-                const changeText = scoreChange > 0 ? `+${scoreChange}` : scoreChange.toString();
-                const changeColor = scoreChange > 0 ? '#27ae60' : scoreChange < 0 ? '#e74c3c' : '#95a5a6';
-                
-                html += `
-                    <tr>
-                        <td>${player.name}</td>
-                        <td>${currentPlayer ? currentPlayer.score : player.score}</td>
-                        <td style="color: ${changeColor};">${changeText}</td>
-                    </tr>
-                `;
-            });
-            
-            html += '</tbody></table>';
-            html += `</div>`;
-            
-            return html;
-        }
-
-        function showVotingSection() {
-            const votingSection = document.getElementById('voting-section');
-            const voteOptions = document.getElementById('vote-options');
-            
-            voteOptions.innerHTML = '';
-            
-            // Add all players as voting options
-            gameState.playerOrder?.forEach(player => {
-                const button = document.createElement('button');
-                button.className = 'btn btn-danger';
-                button.textContent = player.name;
-                button.onclick = () => submitVote(player.id);
-                voteOptions.appendChild(button);
-            });
-            
-            votingSection.style.display = 'block';
-            
-            // Hide ready to vote section when voting starts
-            document.getElementById('ready-to-vote-section').style.display = 'none';
-            
-            addToLog('🗳️ Voting phase started! Choose who you think is the imposter.');
-        }
-
-        function showGameOver() {
-            const resultDiv = document.getElementById('game-result');
-            const summaryDiv = document.getElementById('game-summary');
-            
-            if (gameState.gameResult) {
-                resultDiv.innerHTML = `
-                    <div class="${gameState.gameResult.winner === 'location_wins' ? 'success' : 'error'}">
-                        <h3>${gameState.gameResult.message}</h3>
-                        <p>Location: ${gameState.gameResult.location}</p>
-                        <p>Imposter: ${gameState.gameResult.imposter}</p>
-                    </div>
-                `;
-            }
-
-            // Show game summary
-            if (gameState.gameHistory) {
-                let summaryHTML = '<h4>Game Summary:</h4>';
-                gameState.gameHistory.forEach(entry => {
-                    summaryHTML += `
-                        <div class="log-entry">
-                            <strong>${entry.asker}</strong> → <strong>${entry.target}</strong>: ${entry.question}<br>
-                            <em>${entry.answer}</em>
-                        </div>
-                    `;
-                });
-                summaryDiv.innerHTML = summaryHTML;
-            }
-
-            showScreen('game-over-screen');
-        }
-
-        function addToLog(message) {
-            const log = document.getElementById('game-log');
-            const entry = document.createElement('div');
-            entry.className = 'log-entry';
-            entry.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
-            log.appendChild(entry);
-            log.scrollTop = log.scrollHeight;
-        }
-
-        function showError(message) {
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'error';
-            errorDiv.textContent = message;
-            document.querySelector('.container').insertBefore(errorDiv, document.querySelector('.container').firstChild);
-            setTimeout(() => errorDiv.remove(), 5000);
-        }
-
-        function showSuccess(message) {
-            const successDiv = document.createElement('div');
-            successDiv.className = 'success';
-            successDiv.textContent = message;
-            document.querySelector('.container').insertBefore(successDiv, document.querySelector('.container').firstChild);
-            setTimeout(() => successDiv.remove(), 5000);
-        }
-
-        function showInfo(message) {
-            addToLog(message);
-        }
-
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && e.ctrlKey) {
-                if (document.getElementById('answer-modal').classList.contains('active')) {
-                    submitAnswer();
+            if (didWin) {
+                stats.gamesWon++;
+                stats.score = stats.gamesWon; // Update score directly here
+                if (isImposter) {
+                    stats.timesImposterWon++;
                 }
             }
         });
-    </script>
-</body>
-</html>
+
+        // Save game to history but don't call updateScoreboard (already updated above)
+        this.saveGameToHistory();
+        
+        console.log(`Game state after ending: status=${this.gameState.status}, winner=${winner}`);
+    }
+
+    updateScoreboard() {
+        // Simple scoring: winners get +1 point (only calculate once at game end)
+        this.scoreboard.forEach((stats, socketId) => {
+            // Keep existing score calculation - don't recalculate during the game
+            // Score only gets updated when gamesWon increases in endGame()
+            stats.score = stats.gamesWon;
+        });
+    }
+
+    saveGameToHistory() {
+        const gameRecord = {
+            gameNumber: this.gameHistory.length + 1,
+            date: new Date(),
+            location: this.gameState.location,
+            imposter: this.players.get(this.gameState.imposter).name,
+            winner: this.gameState.gameResult.winner,
+            rounds: this.gameState.currentRound,
+            players: Array.from(this.players.entries()).map(([id, player]) => ({
+                name: player.name,
+                role: player.role,
+                wasImposter: id === this.gameState.imposter
+            })),
+            finalScores: Array.from(this.scoreboard.entries()).map(([id, stats]) => ({
+                name: stats.name,
+                score: stats.score
+            }))
+        };
+        
+        this.gameHistory.push(gameRecord);
+        console.log(`Game saved to history: Game #${gameRecord.gameNumber}`);
+    }
+
+    getScoreboardData() {
+        return Array.from(this.scoreboard.entries())
+            .map(([socketId, stats]) => ({
+                ...stats,
+                isOnline: this.players.has(socketId)
+            }))
+            .sort((a, b) => b.score - a.score);
+    }
+
+    getGameStateForPlayer(socketId) {
+        const player = this.players.get(socketId);
+        const isImposter = socketId === this.gameState.imposter;
+        
+        return {
+            ...this.gameState,
+            playerRole: player?.role,
+            isImposter,
+            playerOrder: this.playerOrder.map(id => ({
+                id,
+                name: this.players.get(id).name,
+                isYou: id === socketId
+            })),
+            // Hide imposter identity unless game is ended
+            imposter: this.gameState.status === 'ended' ? this.gameState.imposter : null,
+            scoreboard: this.getScoreboardData(),
+            readyToVoteCount: this.gameState.readyToVoteCount,
+            readyToVotePlayers: Array.from(this.gameState.readyToVotePlayers) // Convert Set to Array for JSON
+        };
+    }
+}
+
+// Generate random room code (letters only)
+function generateRoomCode() {
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    let result = '';
+    for (let i = 0; i < 6; i++) {
+        result += letters.charAt(Math.floor(Math.random() * letters.length));
+    }
+    return result;
+}
+
+// Socket.IO connection handling
+io.on('connection', (socket) => {
+    console.log('User connected:', socket.id);
+
+    socket.on('create_room', (playerName) => {
+        const roomCode = generateRoomCode();
+        const room = new GameRoom(roomCode);
+        room.addPlayer(socket.id, playerName, true);
+        gameRooms.set(roomCode, room);
+        
+        socket.join(roomCode);
+        socket.emit('room_created', { roomCode, isHost: true });
+        socket.emit('room_updated', { 
+            players: Array.from(room.players.entries()).map(([id, player]) => ({
+                id, 
+                name: player.name, 
+                isHost: player.isHost,
+                isReady: player.isReady
+            })),
+            scoreboard: room.getScoreboardData()
+        });
+    });
+
+    socket.on('join_room', ({ roomCode, playerName }) => {
+        const room = gameRooms.get(roomCode);
+        if (!room) {
+            socket.emit('error', 'Room not found');
+            return;
+        }
+        
+        if (room.players.size >= 8) {
+            socket.emit('error', 'Room is full');
+            return;
+        }
+
+        if (room.gameState.status !== 'waiting') {
+            socket.emit('error', 'Game already in progress');
+            return;
+        }
+
+        room.addPlayer(socket.id, playerName);
+        socket.join(roomCode);
+        socket.emit('room_joined', { roomCode, isHost: false });
+        
+        // Notify all players in room
+        io.to(roomCode).emit('room_updated', { 
+            players: Array.from(room.players.entries()).map(([id, player]) => ({
+                id, 
+                name: player.name, 
+                isHost: player.isHost,
+                isReady: player.isReady
+            })),
+            scoreboard: room.getScoreboardData()
+        });
+    });
+
+    socket.on('toggle_ready', () => {
+        const room = findPlayerRoom(socket.id);
+        if (!room) return;
+
+        const player = room.players.get(socket.id);
+        player.isReady = !player.isReady;
+
+        io.to(room.roomCode).emit('room_updated', { 
+            players: Array.from(room.players.entries()).map(([id, player]) => ({
+                id, 
+                name: player.name, 
+                isHost: player.isHost,
+                isReady: player.isReady
+            })),
+            scoreboard: room.getScoreboardData()
+        });
+    });
+
+    socket.on('start_game', (data) => {
+        const room = findPlayerRoom(socket.id);
+        if (!room || !room.players.get(socket.id)?.isHost) return;
+
+        // Set custom locations if provided
+        if (data && data.customLocations && Array.isArray(data.customLocations)) {
+            room.setCustomLocations(data.customLocations);
+        }
+
+        // Check if all players are ready
+        const allReady = Array.from(room.players.values()).every(player => 
+            player.isHost || player.isReady
+        );
+
+        if (!allReady) {
+            socket.emit('error', 'Not all players are ready');
+            return;
+        }
+
+        if (room.startGame()) {
+            // Send game state to all players
+            room.players.forEach((player, socketId) => {
+                io.to(socketId).emit('game_started', room.getGameStateForPlayer(socketId));
+            });
+        } else {
+            socket.emit('error', 'Need at least 3 players to start');
+        }
+    });
+
+    socket.on('ask_question', ({ targetId }) => {
+        const room = findPlayerRoom(socket.id);
+        if (!room || room.gameState.status !== 'playing') return;
+
+        if (room.getCurrentPlayer() !== socket.id) {
+            socket.emit('error', 'Not your turn');
+            return;
+        }
+
+        const question = room.getNextQuestion();
+        const askerName = room.players.get(socket.id).name;
+        const targetName = room.players.get(targetId).name;
+
+        // Store current question for tracking
+        room.gameState.currentQuestion = {
+            askerId: socket.id,
+            targetId,
+            question
+        };
+
+        console.log(`Question asked in room ${room.roomCode}: ${askerName} asks ${targetName} "${question}"`);
+
+        // Send question to all players
+        io.to(room.roomCode).emit('question_asked', {
+            asker: askerName,
+            target: targetName,
+            question,
+            askerId: socket.id,
+            targetId
+        });
+    });
+
+    socket.on('submit_answer', ({ asker, target, question, answer }) => {
+        const room = findPlayerRoom(socket.id);
+        if (!room) return;
+
+        // Get the asker ID from the current question
+        let askerId = null;
+        if (room.gameState.currentQuestion && room.gameState.currentQuestion.targetId === socket.id) {
+            askerId = room.gameState.currentQuestion.askerId;
+        } else {
+            // Fallback: find asker by name
+            for (const [id, player] of room.players.entries()) {
+                if (player.name === asker) {
+                    askerId = id;
+                    break;
+                }
+            }
+        }
+
+        if (!askerId) {
+            console.error('Could not find asker ID for answer submission');
+            return;
+        }
+
+        console.log(`Answer submitted in room ${room.roomCode}: ${answer}`);
+
+        // Process the answer
+        room.processAnswer(askerId, socket.id, question, answer);
+
+        // Send answer to all players
+        io.to(room.roomCode).emit('answer_submitted', {
+            asker: room.players.get(askerId).name,
+            target: room.players.get(socket.id).name,
+            question,
+            answer
+        });
+
+        // Send updated game state to all players
+        room.players.forEach((player, socketId) => {
+            io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+        });
+    });
+
+    socket.on('ready_to_vote', () => {
+        const room = findPlayerRoom(socket.id);
+        if (!room || room.gameState.status !== 'playing') return;
+
+        room.readyToVote(socket.id);
+
+        // Broadcast the updated ready count to all players
+        io.to(room.roomCode).emit('ready_count_updated', {
+            readyCount: room.gameState.readyToVoteCount,
+            requiredCount: room.players.size - 1
+        });
+
+        // If voting starts, send game state update
+        if (room.gameState.status === 'voting') {
+            room.players.forEach((player, socketId) => {
+                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+            });
+        }
+    });
+
+    socket.on('submit_vote', ({ targetId }) => {
+        const room = findPlayerRoom(socket.id);
+        if (!room || room.gameState.status !== 'voting') return;
+
+        room.submitVote(socket.id, targetId);
+
+        // Send updated vote count to all players
+        const voterName = room.players.get(socket.id).name;
+        const targetName = room.players.get(targetId)?.name || 'Unknown';
+        
+        io.to(room.roomCode).emit('vote_submitted', {
+            voter: voterName,
+            target: targetName,
+            votesReceived: room.gameState.votes.size,
+            totalPlayers: room.players.size
+        });
+
+        // If voting is complete, send results
+        if (room.gameState.votes.size === room.players.size) {
+            // Send immediate feedback that all votes are in
+            io.to(room.roomCode).emit('all_votes_received');
+            
+            setTimeout(() => {
+                console.log(`Processing voting results for room ${room.roomCode}`);
+                
+                // Process voting results (this will either end game or continue to next round)
+                room.processVotingResults();
+                
+                console.log(`After processing votes: status=${room.gameState.status}`);
+                
+                // Send updated game state to all players
+                room.players.forEach((player, socketId) => {
+                    const gameStateForPlayer = room.getGameStateForPlayer(socketId);
+                    console.log(`Sending game update to ${player.name}: status=${gameStateForPlayer.status}, round=${gameStateForPlayer.currentRound}`);
+                    io.to(socketId).emit('game_updated', gameStateForPlayer);
+                });
+                
+                // If game ended, also send a specific game over event
+                if (room.gameState.status === 'ended') {
+                    console.log('Game ended, sending game_over event');
+                    io.to(room.roomCode).emit('game_over', room.gameState.gameResult);
+                }
+            }, 2000); // Longer delay to let players see all votes are in
+        }
+    });
+
+    socket.on('imposter_reveal', ({ locationGuess }) => {
+        const room = findPlayerRoom(socket.id);
+        if (!room || socket.id !== room.gameState.imposter) {
+            console.log(`Imposter reveal failed: room=${!!room}, isImposter=${socket.id === room?.gameState.imposter}`);
+            socket.emit('error', 'You are not the imposter');
+            return;
+        }
+
+        console.log(`Imposter reveal in room ${room.roomCode}: ${locationGuess}`);
+        room.imposterReveal(locationGuess);
+
+        // Send final game state to all players
+        room.players.forEach((player, socketId) => {
+            io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+        });
+    });
+
+    socket.on('request_scoreboard', () => {
+        const room = findPlayerRoom(socket.id);
+        if (!room) return;
+
+        socket.emit('scoreboard_updated', {
+            scoreboard: room.getScoreboardData(),
+            gameHistory: room.gameHistory
+        });
+    });
+
+    socket.on('disconnect', () => {
+        console.log('User disconnected:', socket.id);
+        const room = findPlayerRoom(socket.id);
+        if (room) {
+            const player = room.removePlayer(socket.id);
+            
+            if (room.players.size === 0) {
+                gameRooms.delete(room.roomCode);
+                console.log(`Room ${room.roomCode} deleted (no players left)`);
+            } else {
+                io.to(room.roomCode).emit('player_left', {
+                    playerName: player?.name,
+                    players: Array.from(room.players.entries()).map(([id, player]) => ({
+                        id, 
+                        name: player.name, 
+                        isHost: player.isHost,
+                        isReady: player.isReady
+                    })),
+                    scoreboard: room.getScoreboardData()
+                });
+            }
+        }
+    });
+
+    function findPlayerRoom(socketId) {
+        for (const room of gameRooms.values()) {
+            if (room.players.has(socketId)) {
+                return room;
+            }
+        }
+        return null;
+    }
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
