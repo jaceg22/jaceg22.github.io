@@ -437,7 +437,9 @@ class GameRoom {
             })),
             // Hide imposter identity unless game is ended
             imposter: this.gameState.status === 'ended' ? this.gameState.imposter : null,
-            scoreboard: this.getScoreboardData()
+            scoreboard: this.getScoreboardData(),
+            readyToVoteCount: this.gameState.readyToVoteCount,
+            readyToVotePlayers: Array.from(this.gameState.readyToVotePlayers) // Convert Set to Array for JSON
         };
     }
 }
