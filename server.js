@@ -271,6 +271,12 @@ class GameRoom {
     }
 
     submitVote(voterId, targetId) {
+        // Prevent players from voting for themselves
+        if (voterId === targetId) {
+            console.log(`Player ${this.players.get(voterId).name} tried to vote for themselves - ignored`);
+            return;
+        }
+        
         console.log(`Vote submitted: ${this.players.get(voterId).name} votes for ${this.players.get(targetId)?.name || 'Unknown'}`);
         this.gameState.votes.set(voterId, targetId);
         
@@ -308,31 +314,24 @@ class GameRoom {
             }
         });
 
-        // Need at least (players - 1) votes for someone to win
+        // Need at least (players - 1) votes for someone to be eliminated
         const requiredVotes = this.players.size - 1;
         console.log(`Required votes: ${requiredVotes}, Max votes: ${maxVotes}`);
         
         if (maxVotes >= requiredVotes && mostVoted) {
-            // Someone got enough votes
+            // Someone got enough votes to be eliminated
             const wasImposter = mostVoted === this.gameState.imposter;
             console.log(`${this.players.get(mostVoted).name} got enough votes. Was imposter: ${wasImposter}`);
             
-            // Update correct vote stats
-            this.gameState.votes.forEach((targetId, voterId) => {
-                const voterStats = this.scoreboard.get(voterId);
-                if ((wasImposter && targetId === this.gameState.imposter) || 
-                    (!wasImposter && targetId !== this.gameState.imposter)) {
-                    voterStats.correctVotes++;
-                }
-            });
-            
             if (wasImposter) {
+                // Location team correctly identified imposter - only location team wins
                 this.endGame('location_wins', `${this.players.get(mostVoted).name} was correctly identified as the imposter!`);
             } else {
+                // Location team voted wrong person - only imposter wins
                 this.endGame('imposter_wins', `${this.players.get(mostVoted).name} was innocent. The imposter wins!`);
             }
         } else {
-            // Votes were too spread out - location team failed to coordinate
+            // Votes were too spread out - location team failed to coordinate, only imposter wins
             console.log('Votes too spread out, imposter wins by default');
             this.endGame('imposter_wins', `Location team failed to coordinate their votes. The imposter wins!`);
         }
@@ -358,34 +357,34 @@ class GameRoom {
             location: this.gameState.location,
             imposter: this.players.get(this.gameState.imposter).name
         };
-    
-        // Update final game stats
+
+        // Award points based on team-based scoring
         this.players.forEach((player, socketId) => {
             const stats = this.scoreboard.get(socketId);
             const isImposter = socketId === this.gameState.imposter;
-            const didWin = (winner === 'imposter_wins' && isImposter) || 
-                          (winner === 'location_wins' && !isImposter);
+            
+            // Determine if this player's team won
+            let didWin = false;
+            if (winner === 'imposter_wins' && isImposter) {
+                // Only the imposter wins
+                didWin = true;
+            } else if (winner === 'location_wins' && !isImposter) {
+                // Only location team members win
+                didWin = true;
+            }
             
             if (didWin) {
                 stats.gamesWon++;
+                stats.score++;  // Award 1 point for winning
                 if (isImposter) {
                     stats.timesImposterWon++;
                 }
             }
         });
-    
-        // Update scores based on games won (only once)
-        this.updateScoreboard();
+
         this.saveGameToHistory();
         
         console.log(`Game state after ending: status=${this.gameState.status}, winner=${winner}`);
-    }
-    
-    updateScoreboard() {
-        // Simply set score equal to games won (1 point per win)
-        this.scoreboard.forEach((stats) => {
-            stats.score = stats.gamesWon;
-        });
     }
 
     saveGameToHistory() {
