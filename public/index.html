@@ -458,6 +458,7 @@
                 <div style="text-align: center; margin-top: 2rem;">
                     <button id="ready-btn" class="btn btn-warning" onclick="toggleReady()">Ready Up</button>
                     <button id="start-btn" class="btn btn-primary" onclick="startGame()" style="display: none;">🎮 Start Game</button>
+                    <button id="custom-locations-btn" class="btn btn-info" onclick="showCustomLocations()" style="display: none;">🎯 Custom Locations</button>
                     <button class="btn btn-info" onclick="showScoreboard()">📊 Scoreboard</button>
                 </div>
             </div>
@@ -597,6 +598,21 @@
         </div>
     </div>
 
+    <div id="custom-locations-modal" class="modal">
+        <div class="modal-content">
+            <h3>🎯 Custom Locations</h3>
+            <p>Enter your custom locations separated by commas. Leave empty to use default locations.</p>
+            <div class="input-group">
+                <label>Custom Locations:</label>
+                <textarea id="custom-locations-input" rows="6" placeholder="Space Station, Underwater Lab, Haunted House, Secret Base, etc."></textarea>
+            </div>
+            <div style="text-align: center;">
+                <button class="btn btn-primary" onclick="setCustomLocations()">Set Custom Locations</button>
+                <button class="btn btn-warning" onclick="hideCustomLocations()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <div id="round-summary-modal" class="modal">
         <div class="modal-content">
             <h3>📊 Round Summary</h3>
@@ -616,6 +632,7 @@
         let gameHistory = [];
         let roundEndScoreboard = null;
         let hasClickedReadyToVote = false; // Track if player has clicked ready to vote
+        let customLocations = []; // Track custom locations set by host
 
         const locations = [
             "Circus", "Amusement Park", "Crashing Airplane", "Titanic",
@@ -693,7 +710,13 @@
 
         function startGame() {
             if (!isHost) return;
-            socket.emit('start_game');
+            
+            // Send custom locations if they exist
+            if (customLocations.length > 0) {
+                socket.emit('start_game', { customLocations });
+            } else {
+                socket.emit('start_game');
+            }
         }
 
         // Game functions
@@ -793,6 +816,38 @@
 
         function hideRoundSummary() {
             hideModal('round-summary-modal');
+        }
+
+        // Custom locations functions
+        function showCustomLocations() {
+            showModal('custom-locations-modal');
+        }
+
+        function hideCustomLocations() {
+            hideModal('custom-locations-modal');
+        }
+
+        function setCustomLocations() {
+            const input = document.getElementById('custom-locations-input').value.trim();
+            
+            if (input) {
+                // Parse comma-separated locations and clean them up
+                customLocations = input.split(',')
+                    .map(loc => loc.trim())
+                    .filter(loc => loc.length > 0);
+                
+                if (customLocations.length < 3) {
+                    showError('Please provide at least 3 custom locations');
+                    return;
+                }
+                
+                showSuccess(`Custom locations set: ${customLocations.length} locations`);
+            } else {
+                customLocations = [];
+                showSuccess('Using default locations');
+            }
+            
+            hideCustomLocations();
         }
 
         // Socket event handlers
@@ -947,12 +1002,14 @@
                 const hasEnoughPlayers = players.length >= 3;
                 
                 startBtn.style.display = (allReady && hasEnoughPlayers) ? 'inline-block' : 'none';
+                document.getElementById('custom-locations-btn').style.display = 'inline-block';
                 readyBtn.style.display = 'none';
             } else {
                 const currentPlayer = players.find(p => p.name === playerName);
                 readyBtn.textContent = currentPlayer?.isReady ? 'Cancel Ready' : 'Ready Up';
                 readyBtn.className = `btn ${currentPlayer?.isReady ? 'btn-warning' : 'btn-primary'}`;
                 startBtn.style.display = 'none';
+                document.getElementById('custom-locations-btn').style.display = 'none';
             }
         }
 
@@ -1233,13 +1290,6 @@
                 button.onclick = () => submitVote(player.id);
                 voteOptions.appendChild(button);
             });
-            
-            // Add "Not Ready" option
-            const notReadyButton = document.createElement('button');
-            notReadyButton.className = 'btn btn-warning';
-            notReadyButton.textContent = 'Not Ready';
-            notReadyButton.onclick = () => submitVote('not_ready');
-            voteOptions.appendChild(notReadyButton);
             
             votingSection.style.display = 'block';
             

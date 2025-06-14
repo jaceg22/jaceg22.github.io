@@ -11,7 +11,7 @@ const io = socketIo(server);
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Game configuration
-const locations = [
+const defaultLocations = [
     "Circus", "Amusement Park", "Crashing Airplane", "Titanic",
     "Burning Orphanage", "Dingy Motel Drug Deal", "Prison", "Safari",
     "Zombie Apocalypse", "Organ-Harvesting Hospital", "Nuclear Submarine",
@@ -86,6 +86,7 @@ class GameRoom {
         this.playerOrder = [];
         this.scoreboard = new Map(); // socketId -> player stats
         this.gameHistory = []; // Track all games in this room
+        this.customLocations = []; // Store custom locations set by host
     }
 
     addPlayer(socketId, name, isHost = false) {
@@ -131,6 +132,14 @@ class GameRoom {
         return player;
     }
 
+    setCustomLocations(locations) {
+        this.customLocations = locations;
+    }
+
+    getLocations() {
+        return this.customLocations.length > 0 ? this.customLocations : defaultLocations;
+    }
+
     startGame() {
         if (this.players.size < 3) return false;
         
@@ -139,6 +148,7 @@ class GameRoom {
         this.shuffleArray(this.playerOrder);
         
         // Choose location and imposter
+        const locations = this.getLocations();
         this.gameState.location = locations[Math.floor(Math.random() * locations.length)];
         const imposterIndex = Math.floor(Math.random() * this.playerOrder.length);
         this.gameState.imposter = this.playerOrder[imposterIndex];
@@ -261,14 +271,12 @@ class GameRoom {
     }
 
     submitVote(voterId, targetId) {
-        console.log(`Vote submitted: ${this.players.get(voterId).name} votes for ${targetId === 'not_ready' ? 'Not Ready' : this.players.get(targetId)?.name || 'Unknown'}`);
+        console.log(`Vote submitted: ${this.players.get(voterId).name} votes for ${this.players.get(targetId)?.name || 'Unknown'}`);
         this.gameState.votes.set(voterId, targetId);
         
-        // Update voting stats (only for actual player votes, not "not ready")
-        if (targetId !== 'not_ready') {
-            const voterStats = this.scoreboard.get(voterId);
-            voterStats.totalVotes++;
-        }
+        // Update voting stats
+        const voterStats = this.scoreboard.get(voterId);
+        voterStats.totalVotes++;
         
         // Check if all players have voted
         if (this.gameState.votes.size === this.players.size) {
@@ -278,23 +286,17 @@ class GameRoom {
     }
 
     processVotingResults() {
-        // Count votes (excluding "not ready" votes)
+        // Count votes
         const voteCounts = new Map();
-        let notReadyCount = 0;
         
         this.gameState.votes.forEach((targetId) => {
-            if (targetId === 'not_ready') {
-                notReadyCount++;
-            } else {
-                const count = voteCounts.get(targetId) || 0;
-                voteCounts.set(targetId, count + 1);
-            }
+            const count = voteCounts.get(targetId) || 0;
+            voteCounts.set(targetId, count + 1);
         });
 
         console.log('Vote counts:', Array.from(voteCounts.entries()).map(([id, count]) => 
             `${this.players.get(id)?.name || 'Unknown'}: ${count}`
         ));
-        console.log(`Not Ready votes: ${notReadyCount}`);
 
         // Find player with most votes
         let maxVotes = 0;
@@ -317,12 +319,10 @@ class GameRoom {
             
             // Update correct vote stats
             this.gameState.votes.forEach((targetId, voterId) => {
-                if (targetId !== 'not_ready') {
-                    const voterStats = this.scoreboard.get(voterId);
-                    if ((wasImposter && targetId === this.gameState.imposter) || 
-                        (!wasImposter && targetId !== this.gameState.imposter)) {
-                        voterStats.correctVotes++;
-                    }
+                const voterStats = this.scoreboard.get(voterId);
+                if ((wasImposter && targetId === this.gameState.imposter) || 
+                    (!wasImposter && targetId !== this.gameState.imposter)) {
+                    voterStats.correctVotes++;
                 }
             });
             
@@ -528,9 +528,14 @@ io.on('connection', (socket) => {
         });
     });
 
-    socket.on('start_game', () => {
+    socket.on('start_game', (data) => {
         const room = findPlayerRoom(socket.id);
         if (!room || !room.players.get(socket.id)?.isHost) return;
+
+        // Set custom locations if provided
+        if (data && data.customLocations && Array.isArray(data.customLocations)) {
+            room.setCustomLocations(data.customLocations);
+        }
 
         // Check if all players are ready
         const allReady = Array.from(room.players.values()).every(player => 
@@ -654,7 +659,7 @@ io.on('connection', (socket) => {
 
         // Send updated vote count to all players
         const voterName = room.players.get(socket.id).name;
-        const targetName = targetId === 'not_ready' ? 'Not Ready' : room.players.get(targetId)?.name || 'Unknown';
+        const targetName = room.players.get(targetId)?.name || 'Unknown';
         
         io.to(room.roomCode).emit('vote_submitted', {
             voter: voterName,
