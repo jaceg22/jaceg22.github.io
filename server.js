@@ -463,10 +463,11 @@ class GameRoom {
             imposter: this.players.get(this.gameState.imposter).name
         };
     
-        this.currentGameLearning.outcome = winner;
+        // Fix: Use currentGameData instead of currentGameLearning
+        this.currentGameData.outcome = winner;
         this.updateScoreboardAfterGame(winner);
         this.saveGameToHistory();
-        this.saveLearningData();
+        this.saveGameData(); // Fix: Call saveGameData instead of saveLearningData
     
         console.log(`Game state after ending: status=${this.gameState.status}, winner=${winner}`);
     }
