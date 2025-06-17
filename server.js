@@ -83,43 +83,25 @@ class GameRoom {
             currentQuestion: null, // Track the current question being asked
             readyToVoteCount: 0, // Track how many players are ready to vote
             readyToVotePlayers: new Set(), // Track which players clicked ready
-            questionAskedThisTurn: false, // NEW: Track if question was asked this turn
-            waitingForAnswer: false // NEW: Track if we're waiting for an answer
+            questionAskedThisTurn: false, // Track if question was asked this turn
+            waitingForAnswer: false // Track if we're waiting for an answer
         };
         this.playerOrder = [];
         this.scoreboard = new Map(); // socketId -> player stats
         this.gameHistory = []; // Track all games in this room
         this.customLocations = []; // Store custom locations set by host
         
-        // NEW: Learning data collection
-        this.currentGameLearning = {
+        // SIMPLIFIED: Just collect all game data
+        this.currentGameData = {
+            gameNumber: 1,
             location: null,
             imposter: null,
-            playerQaPairs: [], // All player Q&A pairs
-            playerVotes: [], // All player votes with reasoning
+            playerQAs: [], // All Q&A pairs
+            playerVotes: [], // All votes
             outcome: null,
-            roomCode: this.roomCode,
-            gameNumber: 1
+            timestamp: null,
+            roomCode: this.roomCode
         };
-        
-        // NEW: Learning configuration
-        this.learningConfig = {
-            gameType: 'multiplayer', // 'multiplayer' or 'ai'
-            learnFromAll: true, // For multiplayer: learn from everyone
-            // For AI game: learn only from human when they know location, 
-            // or from everyone when human is imposter
-            humanPlayerId: null // Set this for AI games
-        };
-    }
-
-    // NEW: Configure learning settings
-    configureLearning(gameType, humanPlayerId = null) {
-        this.learningConfig = {
-            gameType,
-            learnFromAll: gameType === 'multiplayer',
-            humanPlayerId
-        };
-        console.log(`Learning configured for room ${this.roomCode}: ${gameType} mode`);
     }
 
     addPlayer(socketId, name, isHost = false) {
@@ -190,16 +172,16 @@ class GameRoom {
         console.log(`Location: ${this.gameState.location}`);
         console.log(`Imposter: ${this.players.get(this.gameState.imposter).name}`);
         
-        // NEW: Initialize learning data for this game
-        this.currentGameLearning = {
+        // SIMPLIFIED: Initialize simple data collection
+        this.currentGameData = {
+            gameNumber: this.gameHistory.length + 1,
             location: this.gameState.location,
             imposter: this.players.get(this.gameState.imposter).name,
-            playerQaPairs: [],
+            playerQAs: [],
             playerVotes: [],
             outcome: null,
-            roomCode: this.roomCode,
-            gameNumber: this.gameHistory.length + 1,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            roomCode: this.roomCode
         };
         
         // Update scoreboard - increment games played and times imposter
@@ -226,8 +208,8 @@ class GameRoom {
         this.gameState.currentQuestion = null;
         this.gameState.readyToVoteCount = 0;
         this.gameState.readyToVotePlayers.clear();
-        this.gameState.questionAskedThisTurn = false; // NEW: Reset question flags
-        this.gameState.waitingForAnswer = false; // NEW: Reset waiting flag
+        this.gameState.questionAskedThisTurn = false;
+        this.gameState.waitingForAnswer = false;
         
         // Shuffle question queue
         this.shuffleArray(this.gameState.questionQueue);
@@ -254,19 +236,19 @@ class GameRoom {
         return this.gameState.questionQueue.shift();
     }
 
-    // NEW: Enhanced ask question handling
+    // Enhanced ask question handling
     handleAskQuestion(askerId, targetId) {
         // Check if it's the player's turn
         if (this.getCurrentPlayer() !== askerId) {
             return { error: 'Not your turn' };
         }
 
-        // NEW: Check if question already asked this turn
+        // Check if question already asked this turn
         if (this.gameState.questionAskedThisTurn) {
             return { error: 'Question already asked this turn' };
         }
 
-        // NEW: Check if we're waiting for an answer
+        // Check if we're waiting for an answer
         if (this.gameState.waitingForAnswer) {
             return { error: 'Waiting for answer to previous question' };
         }
@@ -282,7 +264,7 @@ class GameRoom {
             question
         };
 
-        // NEW: Mark question as asked and waiting for answer
+        // Mark question as asked and waiting for answer
         this.gameState.questionAskedThisTurn = true;
         this.gameState.waitingForAnswer = true;
 
@@ -296,43 +278,6 @@ class GameRoom {
             askerId,
             targetId
         };
-    }
-
-    // NEW: Determine if we should learn from this answer
-    shouldLearnFromAnswer(playerId) {
-        if (this.learningConfig.gameType === 'multiplayer') {
-            return true; // Learn from everyone in multiplayer
-        }
-        
-        // AI game logic
-        const isHuman = playerId === this.learningConfig.humanPlayerId;
-        const humanIsImposter = this.learningConfig.humanPlayerId === this.gameState.imposter;
-        
-        if (humanIsImposter) {
-            return true; // Learn from everyone when human is imposter
-        } else {
-            return isHuman; // Only learn from human when they know the location
-        }
-    }
-
-    // NEW: Enhanced learning data collection
-    collectLearningData(askerId, targetId, question, answer) {
-        const targetPlayer = this.players.get(targetId);
-        const shouldLearn = this.shouldLearnFromAnswer(targetId);
-        
-        if (shouldLearn) {
-            this.currentGameLearning.playerQaPairs.push({
-                playerName: targetPlayer.name,
-                question: question,
-                answer: answer,
-                role: targetPlayer.role,
-                location: this.gameState.location,
-                round: this.gameState.currentRound,
-                wasImposter: targetId === this.gameState.imposter,
-                gameType: this.learningConfig.gameType,
-                isHuman: this.learningConfig.gameType === 'ai' ? targetId === this.learningConfig.humanPlayerId : true
-            });
-        }
     }
 
     processAnswer(askerId, targetId, question, answer) {
@@ -349,8 +294,17 @@ class GameRoom {
             round: this.gameState.currentRound
         });
 
-        // NEW: Use enhanced learning data collection
-        this.collectLearningData(askerId, targetId, question, answer);
+        // SIMPLIFIED: Just log everything - you decide what to learn from later
+        const targetPlayer = this.players.get(targetId);
+        this.currentGameData.playerQAs.push({
+            asker: this.players.get(askerId).name,
+            target: targetPlayer.name,
+            question: question,
+            answer: answer,
+            targetRole: targetPlayer.role, // 'imposter' or location name
+            wasTargetImposter: targetId === this.gameState.imposter,
+            round: this.gameState.currentRound
+        });
 
         // Update scoreboard
         const askerStats = this.scoreboard.get(askerId);
@@ -365,7 +319,7 @@ class GameRoom {
         }
         this.gameState.playerAnswers.get(targetName).push(answer);
 
-        // NEW: Reset question flags when moving to next turn
+        // Reset question flags when moving to next turn
         this.gameState.questionAskedThisTurn = false;
         this.gameState.waitingForAnswer = false;
         this.gameState.currentQuestion = null;
@@ -402,34 +356,6 @@ class GameRoom {
         console.log(`Voting started in room ${this.roomCode}`);
     }
 
-    // NEW: Determine if we should learn from this vote
-    shouldLearnFromVote(voterId) {
-        // Same logic as answers for consistency
-        return this.shouldLearnFromAnswer(voterId);
-    }
-
-    // NEW: Enhanced vote collection
-    collectVoteData(voterId, targetId, reasoning = null) {
-        const shouldLearn = this.shouldLearnFromVote(voterId);
-        
-        if (shouldLearn) {
-            const voterPlayer = this.players.get(voterId);
-            const targetPlayer = this.players.get(targetId);
-            const wasCorrect = targetId === this.gameState.imposter;
-            
-            this.currentGameLearning.playerVotes.push({
-                voterName: voterPlayer.name,
-                votedFor: targetPlayer?.name || 'Unknown',
-                wasCorrect: wasCorrect,
-                reasoning: reasoning || null,
-                voterWasImposter: voterId === this.gameState.imposter,
-                round: this.gameState.currentRound,
-                gameType: this.learningConfig.gameType,
-                isHuman: this.learningConfig.gameType === 'ai' ? voterId === this.learningConfig.humanPlayerId : true
-            });
-        }
-    }
-
     submitVote(voterId, targetId, reasoning = null) {
         // Prevent players from voting for themselves
         if (voterId === targetId) {
@@ -440,8 +366,16 @@ class GameRoom {
         console.log(`Vote submitted: ${this.players.get(voterId).name} votes for ${this.players.get(targetId)?.name || 'Unknown'}`);
         this.gameState.votes.set(voterId, targetId);
         
-        // NEW: Use enhanced vote collection
-        this.collectVoteData(voterId, targetId, reasoning);
+        // SIMPLIFIED: Just log the vote data
+        const voterPlayer = this.players.get(voterId);
+        const targetPlayer = this.players.get(targetId);
+        this.currentGameData.playerVotes.push({
+            voter: voterPlayer.name,
+            votedFor: targetPlayer?.name || 'Unknown',
+            wasCorrect: targetId === this.gameState.imposter,
+            voterWasImposter: voterId === this.gameState.imposter,
+            reasoning: reasoning || null
+        });
         
         // Update voting stats
         const voterStats = this.scoreboard.get(voterId);
@@ -515,6 +449,11 @@ class GameRoom {
     }
 
     endGame(winner, message) {
+        if (this.gameState.status === 'ended') {
+            console.warn('endGame called more than once – ignored.');
+            return;
+        }
+    
         console.log(`Game ended in room ${this.roomCode}: ${winner} - ${message}`);
         this.gameState.status = 'ended';
         this.gameState.gameResult = {
@@ -523,31 +462,75 @@ class GameRoom {
             location: this.gameState.location,
             imposter: this.players.get(this.gameState.imposter).name
         };
-
-        // NEW: Set outcome for learning data
+    
         this.currentGameLearning.outcome = winner;
-
-        // Award points based on team-based scoring (only once per game)
         this.updateScoreboardAfterGame(winner);
-
         this.saveGameToHistory();
-        
-        // NEW: Save learning data
         this.saveLearningData();
-        
+    
         console.log(`Game state after ending: status=${this.gameState.status}, winner=${winner}`);
     }
+    
 
-    // NEW: Scoreboard update logic
+    // SIMPLIFIED: Save all game data to one simple file
+    saveGameData() {
+        if (this.currentGameData.playerQAs.length === 0) {
+            console.log('No game data to save');
+            return;
+        }
+
+        try {
+            const filename = 'gamelogs.txt';
+            
+            // Simple, readable format
+            let gameLog = `GAME ${this.currentGameData.gameNumber}\n`;
+            gameLog += `Timestamp: ${this.currentGameData.timestamp}\n`;
+            gameLog += `Room: ${this.currentGameData.roomCode}\n`;
+            gameLog += `Location: ${this.currentGameData.location}\n`;
+            gameLog += `Imposter: ${this.currentGameData.imposter}\n`;
+            gameLog += `Outcome: ${this.currentGameData.outcome}\n`;
+            gameLog += '\n';
+            
+            // Log all Q&A pairs
+            gameLog += 'QUESTIONS AND ANSWERS:\n';
+            this.currentGameData.playerQAs.forEach(qa => {
+                gameLog += `${qa.asker} asks ${qa.target}: "${qa.question}"\n`;
+                gameLog += `${qa.target} (${qa.targetRole}): "${qa.answer}"\n`;
+                gameLog += '\n';
+            });
+            
+            // Log all votes
+            gameLog += 'VOTES:\n';
+            this.currentGameData.playerVotes.forEach(vote => {
+                const correctText = vote.wasCorrect ? 'CORRECT' : 'WRONG';
+                gameLog += `${vote.voter} votes for ${vote.votedFor} (${correctText})\n`;
+                if (vote.reasoning) {
+                    gameLog += `Reasoning: ${vote.reasoning}\n`;
+                }
+            });
+            
+            gameLog += '\n' + '='.repeat(50) + '\n\n';
+            
+            // Append to file
+            fs.appendFileSync(filename, gameLog, 'utf8');
+            
+            console.log(`Game data saved to ${filename}`);
+            
+        } catch (error) {
+            console.error('Error saving game data:', error);
+        }
+    }
+
+    // Scoreboard update logic
     updateScoreboardAfterGame(winner) {
         console.log(`Updating scoreboard for winner: ${winner}`);
-    
+        
         this.players.forEach((player, socketId) => {
             const stats = this.scoreboard.get(socketId);
             const isImposter = socketId === this.gameState.imposter;
-    
+            
             let didWin = false;
-    
+            
             if (winner === 'imposter_wins') {
                 // Only the imposter gets a win point
                 if (isImposter) {
@@ -562,14 +545,14 @@ class GameRoom {
                     console.log(`${player.name} (location team) gets win point`);
                 }
             }
-    
+            
             if (didWin) {
                 stats.gamesWon++;
             }
-    
+            
             // Final score is based on games won
             stats.score = stats.gamesWon;
-    
+            
             console.log(`${player.name} final stats: ${stats.gamesWon}/${stats.gamesPlayed} wins, score: ${stats.score}`);
         });
     }
@@ -597,267 +580,27 @@ class GameRoom {
         console.log(`Game saved to history: Game #${gameRecord.gameNumber}`);
     }
 
-    // NEW: Save learning data method
-    saveLearningData() {
-        if (this.currentGameLearning.playerQaPairs.length === 0 && this.currentGameLearning.playerVotes.length === 0) {
-            console.log('No learning data to save');
-            return;
-        }
-
+    // SIMPLIFIED: Just get basic stats
+    getGameStats() {
         try {
-            // Determine filename based on game type
-            const filename = this.learningConfig.gameType === 'multiplayer' 
-                ? 'gamelogs_multiplayer.txt' 
-                : 'gamelogs_ai.txt';
-            
-            let learningContent = `GAME ${this.currentGameLearning.gameNumber}\n`;
-            learningContent += `GameType: ${this.learningConfig.gameType}\n`;
-            learningContent += `Location: ${this.currentGameLearning.location}\n`;
-            learningContent += `Imposter: ${this.currentGameLearning.imposter}\n`;
-            
-            // Write all Q&A pairs that we're learning from
-            this.currentGameLearning.playerQaPairs.forEach(qa => {
-                const roleStr = qa.wasImposter ? "Imposter" : qa.location;
-                const humanFlag = qa.gameType === 'ai' ? ` | Human: ${qa.isHuman}` : '';
-                learningContent += `Q: ${qa.question} | ${qa.playerName}: ${qa.answer} | Role: ${roleStr}${humanFlag}\n`;
-            });
-            
-            // Write all votes that we're learning from
-            this.currentGameLearning.playerVotes.forEach(vote => {
-                const reasoningText = vote.reasoning ? ` | Reasoning: ${vote.reasoning}` : "";
-                const humanFlag = vote.gameType === 'ai' ? ` | Human: ${vote.isHuman}` : '';
-                learningContent += `Vote: ${vote.voterName}->${vote.votedFor} | Correct: ${vote.wasCorrect}${reasoningText}${humanFlag}\n`;
-            });
-            
-            learningContent += `Outcome: ${this.currentGameLearning.outcome}\n`;
-            learningContent += `Timestamp: ${new Date().toISOString().replace('T', ' ').substring(0, 19)}\n`;
-            learningContent += '\n';
-            
-            // Append to appropriate file
-            fs.appendFileSync(filename, learningContent, 'utf8');
-            
-            console.log(`Learning data saved to ${filename} for room ${this.roomCode}, game ${this.currentGameLearning.gameNumber}`);
-            console.log(`Saved ${this.currentGameLearning.playerQaPairs.length} Q&A pairs and ${this.currentGameLearning.playerVotes.length} votes`);
-            
-        } catch (error) {
-            console.error('Error saving learning data:', error);
-        }
-    }
-
-    // NEW: Get learning stats
-    getLearningStats() {
-        try {
-            const filename = this.learningConfig.gameType === 'multiplayer' 
-                ? 'gamelogs_multiplayer.txt' 
-                : 'gamelogs_ai.txt';
-                
-            if (!fs.existsSync(filename)) {
-                return { totalGames: 0, totalQAs: 0, totalVotes: 0 };
+            if (!fs.existsSync('gamelogs.txt')) {
+                return { totalGames: 0, totalQuestions: 0, totalVotes: 0 };
             }
             
-            const content = fs.readFileSync(filename, 'utf8');
+            const content = fs.readFileSync('gamelogs.txt', 'utf8');
             const gameCount = (content.match(/GAME \d+/g) || []).length;
-            const qaCount = (content.match(/Q: .+ \| .+ \| Role: /g) || []).length;
-            const voteCount = (content.match(/Vote: .+->.+ \| Correct: /g) || []).length;
+            const questionCount = (content.match(/asks .+: "/g) || []).length;
+            const voteCount = (content.match(/votes for .+ \(/g) || []).length;
             
             return {
                 totalGames: gameCount,
-                totalQAs: qaCount,
+                totalQuestions: questionCount,
                 totalVotes: voteCount
             };
         } catch (error) {
-            console.error('Error reading learning stats:', error);
-            return { totalGames: 0, totalQAs: 0, totalVotes: 0 };
+            console.error('Error reading game stats:', error);
+            return { totalGames: 0, totalQuestions: 0, totalVotes: 0 };
         }
-    }
-
-    // NEW: Get combined learning stats
-    getCombinedLearningStats() {
-        try {
-            const multiplayerStats = this.getFileStats('gamelogs_multiplayer.txt');
-            const aiStats = this.getFileStats('gamelogs_ai.txt');
-            
-            return {
-                multiplayer: multiplayerStats,
-                ai: aiStats,
-                combined: {
-                    totalGames: multiplayerStats.totalGames + aiStats.totalGames,
-                    totalQAs: multiplayerStats.totalQAs + aiStats.totalQAs,
-                    totalVotes: multiplayerStats.totalVotes + aiStats.totalVotes
-                }
-            };
-        } catch (error) {
-            console.error('Error getting combined stats:', error);
-            return {
-                multiplayer: { totalGames: 0, totalQAs: 0, totalVotes: 0 },
-                ai: { totalGames: 0, totalQAs: 0, totalVotes: 0 },
-                combined: { totalGames: 0, totalQAs: 0, totalVotes: 0 }
-            };
-        }
-    }
-
-    // NEW: Get stats for a specific file
-    getFileStats(filename) {
-        try {
-            if (!fs.existsSync(filename)) {
-                return { totalGames: 0, totalQAs: 0, totalVotes: 0 };
-            }
-            
-            const content = fs.readFileSync(filename, 'utf8');
-            const gameCount = (content.match(/GAME \d+/g) || []).length;
-            const qaCount = (content.match(/Q: .+ \| .+ \| Role: /g) || []).length;
-            const voteCount = (content.match(/Vote: .+->.+ \| Correct: /g) || []).length;
-            
-            return {
-                totalGames: gameCount,
-                totalQAs: qaCount,
-                totalVotes: voteCount
-            };
-        } catch (error) {
-            console.error(`Error reading stats from ${filename}:`, error);
-            return { totalGames: 0, totalQAs: 0, totalVotes: 0 };
-        }
-    }
-
-    // NEW: Combine learning files
-    static combineLearningFiles() {
-        try {
-            const multiplayerFile = 'gamelogs_multiplayer.txt';
-            const aiFile = 'gamelogs_ai.txt';
-            const combinedFile = 'gamelogs_combined.txt';
-            
-            let combinedContent = '// Combined learning data from multiplayer and AI games\n';
-            combinedContent += `// Generated: ${new Date().toISOString()}\n\n`;
-            
-            // Add multiplayer data
-            if (fs.existsSync(multiplayerFile)) {
-                combinedContent += '// === MULTIPLAYER GAMES ===\n';
-                combinedContent += fs.readFileSync(multiplayerFile, 'utf8');
-                combinedContent += '\n';
-            }
-            
-            // Add AI data
-            if (fs.existsSync(aiFile)) {
-                combinedContent += '// === AI GAMES ===\n';
-                combinedContent += fs.readFileSync(aiFile, 'utf8');
-            }
-            
-            fs.writeFileSync(combinedFile, combinedContent, 'utf8');
-            console.log('Learning files combined successfully');
-            
-            return {
-                success: true,
-                combinedFile,
-                message: 'Learning data combined successfully'
-            };
-        } catch (error) {
-            console.error('Error combining learning files:', error);
-            return {
-                success: false,
-                error: error.message
-            };
-        }
-    }
-
-    // NEW: Export learning data as JSON
-    exportLearningAsJSON() {
-        const stats = this.getCombinedLearningStats();
-        const exportData = {
-            metadata: {
-                exportDate: new Date().toISOString(),
-                roomCode: this.roomCode,
-                stats: stats
-            },
-            games: []
-        };
-        
-        // Read and parse both learning files
-        ['gamelogs_multiplayer.txt', 'gamelogs_ai.txt'].forEach(filename => {
-            if (fs.existsSync(filename)) {
-                const content = fs.readFileSync(filename, 'utf8');
-                const games = this.parseLearningFile(content);
-                exportData.games.push(...games);
-            }
-        });
-        
-        return JSON.stringify(exportData, null, 2);
-    }
-
-    // NEW: Export learning data as CSV
-    exportLearningAsCSV() {
-        let csv = 'GameNumber,GameType,Location,Imposter,Round,QuestionAsker,QuestionTarget,Question,Answer,PlayerRole,WasImposter,Outcome\n';
-        
-        ['gamelogs_multiplayer.txt', 'gamelogs_ai.txt'].forEach(filename => {
-            if (fs.existsSync(filename)) {
-                const content = fs.readFileSync(filename, 'utf8');
-                const games = this.parseLearningFile(content);
-                
-                games.forEach(game => {
-                    game.qaPairs.forEach(qa => {
-                        csv += `${game.gameNumber},"${game.gameType}","${game.location}","${game.imposter}",${qa.round},"","${qa.playerName}","${qa.question}","${qa.answer}","${qa.role}",${qa.wasImposter},"${game.outcome}"\n`;
-                    });
-                });
-            }
-        });
-        
-        return csv;
-    }
-
-    // NEW: Parse learning file into structured data
-    parseLearningFile(content) {
-        const games = [];
-        const gameBlocks = content.split(/GAME \d+/).slice(1);
-        
-        gameBlocks.forEach((block, index) => {
-            const lines = block.trim().split('\n');
-            const game = {
-                gameNumber: index + 1,
-                gameType: 'multiplayer',
-                location: '',
-                imposter: '',
-                outcome: '',
-                qaPairs: [],
-                votes: []
-            };
-            
-            lines.forEach(line => {
-                if (line.startsWith('GameType:')) {
-                    game.gameType = line.replace('GameType:', '').trim();
-                } else if (line.startsWith('Location:')) {
-                    game.location = line.replace('Location:', '').trim();
-                } else if (line.startsWith('Imposter:')) {
-                    game.imposter = line.replace('Imposter:', '').trim();
-                } else if (line.startsWith('Outcome:')) {
-                    game.outcome = line.replace('Outcome:', '').trim();
-                } else if (line.startsWith('Q:')) {
-                    // Parse Q&A line
-                    const match = line.match(/Q: (.+) \| (.+): (.+) \| Role: (.+)/);
-                    if (match) {
-                        game.qaPairs.push({
-                            question: match[1],
-                            playerName: match[2],
-                            answer: match[3],
-                            role: match[4],
-                            wasImposter: match[4] === 'Imposter'
-                        });
-                    }
-                } else if (line.startsWith('Vote:')) {
-                    // Parse vote line
-                    const match = line.match(/Vote: (.+)->(.+) \| Correct: (.+)/);
-                    if (match) {
-                        game.votes.push({
-                            voter: match[1],
-                            target: match[2],
-                            wasCorrect: match[3] === 'true'
-                        });
-                    }
-                }
-            });
-            
-            games.push(game);
-        });
-        
-        return games;
     }
 
     getScoreboardData() {
@@ -886,8 +629,8 @@ class GameRoom {
             imposter: this.gameState.status === 'ended' ? this.gameState.imposter : null,
             scoreboard: this.getScoreboardData(),
             readyToVoteCount: this.gameState.readyToVoteCount,
-            readyToVotePlayers: Array.from(this.gameState.readyToVotePlayers), // Convert Set to Array for JSON
-            learningStats: this.getLearningStats() // NEW: Include learning stats
+            readyToVotePlayers: Array.from(this.gameState.readyToVotePlayers),
+            gameStats: this.getGameStats() // SIMPLIFIED: Basic stats only
         };
     }
 }
@@ -921,8 +664,7 @@ io.on('connection', (socket) => {
                 isHost: player.isHost,
                 isReady: player.isReady
             })),
-            scoreboard: room.getScoreboardData(),
-            learningStats: room.getLearningStats() // NEW: Send learning stats
+            scoreboard: room.getScoreboardData()
         });
     });
 
@@ -955,8 +697,7 @@ io.on('connection', (socket) => {
                 isHost: player.isHost,
                 isReady: player.isReady
             })),
-            scoreboard: room.getScoreboardData(),
-            learningStats: room.getLearningStats() // NEW: Send learning stats
+            scoreboard: room.getScoreboardData()
         });
     });
 
@@ -974,8 +715,7 @@ io.on('connection', (socket) => {
                 isHost: player.isHost,
                 isReady: player.isReady
             })),
-            scoreboard: room.getScoreboardData(),
-            learningStats: room.getLearningStats() // NEW: Send learning stats
+            scoreboard: room.getScoreboardData()
         });
     });
 
@@ -1008,7 +748,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // NEW: Enhanced ask question handler
+    // Enhanced ask question handler
     socket.on('ask_question', ({ targetId }) => {
         const room = findPlayerRoom(socket.id);
         if (!room || room.gameState.status !== 'playing') return;
@@ -1086,7 +826,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // NEW: Enhanced vote submission with reasoning
+    // Enhanced vote submission with reasoning
     socket.on('submit_vote', ({ targetId, reasoning }) => {
         const room = findPlayerRoom(socket.id);
         if (!room || room.gameState.status !== 'voting') return;
@@ -1156,118 +896,16 @@ io.on('connection', (socket) => {
 
         socket.emit('scoreboard_updated', {
             scoreboard: room.getScoreboardData(),
-            gameHistory: room.gameHistory,
-            learningStats: room.getLearningStats() // NEW: Include learning stats
+            gameHistory: room.gameHistory
         });
     });
 
-    // NEW: Configure learning type for room
-    socket.on('configure_learning', ({ gameType, humanPlayerId }) => {
+    // SIMPLIFIED: Just get basic game stats
+    socket.on('get_game_stats', () => {
         const room = findPlayerRoom(socket.id);
         if (!room) return;
         
-        // Only host can configure learning
-        if (!room.players.get(socket.id)?.isHost) {
-            socket.emit('error', 'Only host can configure learning settings');
-            return;
-        }
-        
-        room.configureLearning(gameType, humanPlayerId);
-        
-        socket.emit('learning_configured', {
-            gameType,
-            humanPlayerId,
-            message: `Learning configured for ${gameType} mode`
-        });
-        
-        console.log(`Learning configured for room ${room.roomCode}: ${gameType} mode`);
-    });
-
-    // NEW: Combine learning files
-    socket.on('combine_learning_files', () => {
-        const room = findPlayerRoom(socket.id);
-        if (!room) return;
-        
-        // Only host can combine files
-        if (!room.players.get(socket.id)?.isHost) {
-            socket.emit('error', 'Only host can combine learning files');
-            return;
-        }
-        
-        const result = GameRoom.combineLearningFiles();
-        socket.emit('learning_files_combined', result);
-    });
-
-    // NEW: Get detailed learning stats
-    socket.on('get_detailed_learning_stats', () => {
-        const room = findPlayerRoom(socket.id);
-        if (!room) return;
-        
-        const stats = room.getCombinedLearningStats();
-        socket.emit('detailed_learning_stats', stats);
-    });
-
-    // NEW: Export learning data
-    socket.on('export_learning_data', ({ format }) => {
-        const room = findPlayerRoom(socket.id);
-        if (!room) return;
-        
-        // Only host can export
-        if (!room.players.get(socket.id)?.isHost) {
-            socket.emit('error', 'Only host can export learning data');
-            return;
-        }
-        
-        try {
-            let exportData;
-            
-            if (format === 'json') {
-                exportData = room.exportLearningAsJSON();
-            } else if (format === 'csv') {
-                exportData = room.exportLearningAsCSV();
-            } else {
-                exportData = room.exportLearningAsText();
-            }
-            
-            socket.emit('learning_data_exported', {
-                format,
-                data: exportData,
-                filename: `learning_export_${Date.now()}.${format}`
-            });
-            
-        } catch (error) {
-            socket.emit('error', 'Failed to export learning data');
-        }
-    });
-
-    // NEW: Manual save learning data endpoint
-    socket.on('save_learning_data', () => {
-        const room = findPlayerRoom(socket.id);
-        if (!room) return;
-        
-        // Only host can manually save
-        if (!room.players.get(socket.id)?.isHost) {
-            socket.emit('error', 'Only host can manually save learning data');
-            return;
-        }
-        
-        try {
-            room.saveLearningData();
-            socket.emit('learning_data_saved', {
-                message: 'Learning data saved successfully',
-                stats: room.getLearningStats()
-            });
-        } catch (error) {
-            socket.emit('error', 'Failed to save learning data');
-        }
-    });
-
-    // NEW: Get learning stats endpoint
-    socket.on('get_learning_stats', () => {
-        const room = findPlayerRoom(socket.id);
-        if (!room) return;
-        
-        socket.emit('learning_stats_updated', room.getLearningStats());
+        socket.emit('game_stats_updated', room.getGameStats());
     });
 
     socket.on('disconnect', () => {
@@ -1288,8 +926,7 @@ io.on('connection', (socket) => {
                         isHost: player.isHost,
                         isReady: player.isReady
                     })),
-                    scoreboard: room.getScoreboardData(),
-                    learningStats: room.getLearningStats() // NEW: Include learning stats
+                    scoreboard: room.getScoreboardData()
                 });
             }
         }
@@ -1308,5 +945,5 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
-    console.log('Learning system enabled - all player data will be saved to gamelogs_multiplayer.txt or gamelogs_ai.txt');
+    console.log('Game logging enabled - all game data will be saved to gamelogs.txt');
 });
