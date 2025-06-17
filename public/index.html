@@ -102,6 +102,17 @@
         .btn-warning { background: linear-gradient(45deg, #f39c12, #e67e22); }
         .btn-info { background: linear-gradient(45deg, #8e44ad, #9b59b6); }
 
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .btn:disabled:hover {
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
         .players-list {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -401,6 +412,55 @@
             max-width: 800px;
         }
 
+        .learning-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            text-align: center;
+        }
+
+        .stat-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 1rem;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .stat-item h5 {
+            margin: 0 0 0.5rem 0;
+            color: #3498db;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+        }
+
+        .stat-item .stat-value {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #27ae60;
+        }
+
+        .stat-item .stat-detail {
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.7);
+            margin-top: 0.25rem;
+        }
+
+        .question-status-waiting {
+            color: #f39c12 !important;
+        }
+
+        .question-status-asked {
+            color: #e74c3c !important;
+        }
+
+        .question-status-ready {
+            color: #27ae60 !important;
+        }
+
+        .question-status-asking {
+            color: #3498db !important;
+        }
+
         @media (max-width: 768px) {
             .title {
                 font-size: 2rem;
@@ -411,6 +471,10 @@
             }
             
             .game-info {
+                grid-template-columns: 1fr;
+            }
+
+            .learning-stats-grid {
                 grid-template-columns: 1fr;
             }
         }
@@ -461,11 +525,11 @@
                     <button id="ready-btn" class="btn btn-warning" onclick="toggleReady()">Ready Up</button>
                     <button id="start-btn" class="btn btn-primary" onclick="startGame()" style="display: none;">🎮 Start Game</button>
                     <button id="custom-locations-btn" class="btn btn-info" onclick="showCustomLocations()" style="display: none;">🎯 Custom Locations</button>
+                    <button id="learning-settings-btn" class="btn btn-info" onclick="showLearningSettings()" style="display: none;">🧠 Learning Settings</button>
                     <button class="btn btn-info" onclick="showScoreboard()">📊 Scoreboard</button>
                 </div>
             </div>
 
-            <!-- Lobby Scoreboard -->
             <div class="scoreboard">
                 <h3>🏆 Room Scoreboard</h3>
                 <div id="lobby-scoreboard-content">
@@ -508,7 +572,10 @@
                             <option value="">Select player to ask</option>
                         </select>
                     </div>
-                    <button class="btn btn-primary" onclick="askQuestion()">🎲 Ask Random Question</button>
+                    <button id="ask-question-btn" class="btn btn-primary" onclick="askQuestion()">🎲 Ask Random Question</button>
+                    <div id="question-status" style="margin-top: 0.5rem; font-style: italic; color: rgba(255,255,255,0.7); display: none;">
+                        <!-- Status messages will appear here -->
+                    </div>
                 </div>
 
                 <div id="imposter-reveal-section" style="display: none;">
@@ -516,7 +583,6 @@
                 </div>
             </div>
 
-            <!-- Ready to Vote Section -->
             <div id="ready-to-vote-section" class="ready-to-vote-section" style="display: none;">
                 <p>🗳️ Ready to start voting?</p>
                 <div class="ready-count" id="ready-count-display">0 players ready</div>
@@ -530,7 +596,6 @@
                 <div id="vote-options"></div>
             </div>
 
-            <!-- In-Game Scoreboard -->
             <div class="scoreboard">
                 <h3>📊 Current Scores</h3>
                 <div id="game-scoreboard-content"></div>
@@ -620,6 +685,61 @@
         </div>
     </div>
 
+    <div id="learning-settings-modal" class="modal">
+        <div class="modal-content large">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h3>🧠 Learning Settings</h3>
+                <button class="btn btn-warning" onclick="hideLearningSettings()" style="margin-left: auto;">✕ Close</button>
+            </div>
+            
+            <div class="input-group">
+                <label>Game Type:</label>
+                <select id="learning-game-type">
+                    <option value="multiplayer">Multiplayer (learn from everyone)</option>
+                    <option value="ai">AI Game (selective learning)</option>
+                </select>
+                <small style="color: rgba(255,255,255,0.7); margin-top: 0.5rem; display: block;">
+                    Multiplayer: Learns from all player responses.<br>
+                    AI Game: Only learns from human when they know location, or from everyone when human is imposter.
+                </small>
+            </div>
+            
+            <div id="human-player-section" style="display: none;">
+                <div class="input-group">
+                    <label>Human Player (for AI mode):</label>
+                    <select id="human-player-select">
+                        <option value="">Select human player</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div style="margin: 1.5rem 0;">
+                <h4>📊 Learning Statistics</h4>
+                <div id="learning-stats-display" style="background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 8px; margin-top: 0.5rem;">
+                    Loading statistics...
+                </div>
+            </div>
+            
+            <div style="margin: 1.5rem 0;">
+                <h4>📁 File Management</h4>
+                <p style="font-size: 0.9rem; color: rgba(255,255,255,0.8); margin-bottom: 1rem;">
+                    Learning data is saved to separate files:<br>
+                    • <strong>gamelogs_multiplayer.txt</strong> - Data from multiplayer games<br>
+                    • <strong>gamelogs_ai.txt</strong> - Data from AI games<br>
+                    • <strong>gamelogs_combined.txt</strong> - Merged data from both files
+                </p>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.5rem;">
+                <button class="btn btn-primary" onclick="configureLearning()">Apply Settings</button>
+                <button class="btn btn-warning" onclick="combineLearningFiles()">Combine Files</button>
+                <button class="btn btn-info" onclick="exportLearningData('json')">Export JSON</button>
+                <button class="btn btn-info" onclick="exportLearningData('csv')">Export CSV</button>
+                <button class="btn btn-info" onclick="refreshLearningStats()">Refresh Stats</button>
+            </div>
+        </div>
+    </div>
+
     <div id="round-summary-modal" class="modal">
         <div class="modal-content">
             <h3>📊 Round Summary</h3>
@@ -638,8 +758,8 @@
         let scoreboardData = [];
         let gameHistory = [];
         let roundEndScoreboard = null;
-        let hasClickedReadyToVote = false; // Track if player has clicked ready to vote
-        let customLocations = []; // Track custom locations set by host
+        let hasClickedReadyToVote = false;
+        let customLocations = [];
 
         const locations = [
             "Circus", "Amusement Park", "Crashing Airplane", "Titanic",
@@ -649,7 +769,6 @@
             "Underwater Research Lab", "Haunted Mansion", "Beach"
         ];
 
-        // Initialize locations display
         document.addEventListener('DOMContentLoaded', () => {
             const locationsList = document.getElementById('locations-list');
             locations.forEach(location => {
@@ -659,8 +778,15 @@
                 locationsList.appendChild(div);
             });
 
-            // Populate imposter modal locations (will be updated when custom locations are set)
             updateImposterModalLocations();
+
+            const gameTypeSelect = document.getElementById('learning-game-type');
+            if (gameTypeSelect) {
+                gameTypeSelect.addEventListener('change', function() {
+                    const humanSection = document.getElementById('human-player-section');
+                    humanSection.style.display = this.value === 'ai' ? 'block' : 'none';
+                });
+            }
         });
 
         function updateImposterModalLocations() {
@@ -676,7 +802,6 @@
             });
         }
 
-        // Screen management
         function showScreen(screenId) {
             document.querySelectorAll('.screen').forEach(screen => {
                 screen.classList.remove('active');
@@ -692,7 +817,6 @@
             document.getElementById(modalId).classList.remove('active');
         }
 
-        // Room management
         function createRoom() {
             playerName = document.getElementById('player-name').value.trim();
             if (!playerName) {
@@ -725,7 +849,6 @@
         function startGame() {
             if (!isHost) return;
             
-            // Send custom locations if they exist
             if (customLocations.length > 0) {
                 socket.emit('start_game', { customLocations });
             } else {
@@ -733,13 +856,14 @@
             }
         }
 
-        // Game functions
         function askQuestion() {
             const targetId = document.getElementById('target-select').value;
             if (!targetId) {
                 showError('Please select a player to ask');
                 return;
             }
+
+            updateQuestionStatus('asking', 'Sending question...');
             socket.emit('ask_question', { targetId });
         }
 
@@ -766,7 +890,6 @@
             socket.emit('ready_to_vote');
             hasClickedReadyToVote = true;
             
-            // Update button to show they've clicked it
             const btn = document.getElementById('ready-to-vote-btn');
             btn.textContent = 'Ready! Waiting for others...';
             btn.disabled = true;
@@ -780,7 +903,6 @@
         }
 
         function showImposterReveal() {
-            // Update location options to use current locations (custom or default)
             updateImposterModalLocations();
             showModal('imposter-modal');
         }
@@ -800,7 +922,6 @@
             const gameLocationsList = document.getElementById('game-locations-list');
             gameLocationsList.innerHTML = '';
             
-            // Show either custom locations or default locations
             const locationsToShow = customLocations.length > 0 ? customLocations : locations;
             locationsToShow.forEach(location => {
                 const div = document.createElement('div');
@@ -812,16 +933,103 @@
 
         function backToLobby() {
             showScreen('lobby-screen');
-            // Reset game state
             gameState = {};
             hasClickedReadyToVote = false;
-            // Request updated scoreboard data to prevent double counting
             setTimeout(() => {
                 socket.emit('request_scoreboard');
             }, 500);
         }
 
-        // Scoreboard functions
+        function updateQuestionStatus(status, message) {
+            const statusElement = document.getElementById('question-status');
+            const askBtn = document.getElementById('ask-question-btn');
+            
+            if (statusElement) {
+                statusElement.style.display = 'block';
+                statusElement.className = `question-status-${status}`;
+                statusElement.textContent = message;
+            }
+            
+            if (askBtn) {
+                switch(status) {
+                    case 'ready':
+                        askBtn.disabled = false;
+                        askBtn.textContent = '🎲 Ask Random Question';
+                        break;
+                    case 'asking':
+                        askBtn.disabled = true;
+                        askBtn.textContent = 'Asking...';
+                        break;
+                    case 'waiting':
+                        askBtn.disabled = true;
+                        askBtn.textContent = 'Waiting for answer...';
+                        break;
+                    case 'asked':
+                        askBtn.disabled = true;
+                        askBtn.textContent = 'Question asked this turn';
+                        break;
+                }
+            }
+        }
+
+        function showLearningSettings() {
+            const humanSelect = document.getElementById('human-player-select');
+            humanSelect.innerHTML = '<option value="">Select human player</option>';
+            
+            if (gameState && gameState.playerOrder) {
+                gameState.playerOrder.forEach(player => {
+                    const option = document.createElement('option');
+                    option.value = player.id;
+                    option.textContent = player.name;
+                    humanSelect.appendChild(option);
+                });
+            }
+            
+            socket.emit('get_detailed_learning_stats');
+            showModal('learning-settings-modal');
+        }
+
+        function hideLearningSettings() {
+            hideModal('learning-settings-modal');
+        }
+
+        function configureLearning() {
+            const gameType = document.getElementById('learning-game-type').value;
+            const humanPlayerId = document.getElementById('human-player-select').value;
+            
+            if (gameType === 'ai' && !humanPlayerId) {
+                showError('Please select the human player for AI mode');
+                return;
+            }
+            
+            socket.emit('configure_learning', {
+                gameType,
+                humanPlayerId: gameType === 'ai' ? humanPlayerId : null
+            });
+        }
+
+        function combineLearningFiles() {
+            socket.emit('combine_learning_files');
+        }
+
+        function exportLearningData(format) {
+            if (!format) {
+                format = prompt('Export format (json/csv/txt):', 'json');
+            }
+            
+            if (format && ['json', 'csv', 'txt'].includes(format.toLowerCase())) {
+                socket.emit('export_learning_data', { format: format.toLowerCase() });
+                showSuccess(`Exporting learning data as ${format.toUpperCase()}...`);
+            } else {
+                showError('Invalid format. Use json, csv, or txt.');
+            }
+        }
+
+        function refreshLearningStats() {
+            document.getElementById('learning-stats-display').innerHTML = 'Refreshing...';
+            socket.emit('get_detailed_learning_stats');
+        }
+
         function showScoreboard() {
             socket.emit('request_scoreboard');
             showModal('scoreboard-modal');
@@ -832,11 +1040,9 @@
         }
 
         function switchTab(tabName) {
-            // Update tab buttons
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelector(`.tab-btn:nth-child(${tabName === 'current' ? 1 : tabName === 'history' ? 2 : 3})`).classList.add('active');
             
-            // Update tab content
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
             document.getElementById(`${tabName}-tab`).classList.add('active');
         }
@@ -850,7 +1056,6 @@
             hideModal('round-summary-modal');
         }
 
-        // Custom locations functions
         function showCustomLocations() {
             showModal('custom-locations-modal');
         }
@@ -863,7 +1068,6 @@
             const input = document.getElementById('custom-locations-input').value.trim();
             
             if (input) {
-                // Parse comma-separated locations and clean them up
                 customLocations = input.split(',')
                     .map(loc => loc.trim())
                     .filter(loc => loc.length > 0);
@@ -874,12 +1078,10 @@
                 }
                 
                 showSuccess(`Custom locations set: ${customLocations.length} locations`);
-                // Update the imposter modal immediately
                 updateImposterModalLocations();
             } else {
                 customLocations = [];
                 showSuccess('Using default locations');
-                // Reset to default locations
                 updateImposterModalLocations();
             }
             
@@ -920,13 +1122,13 @@
 
         socket.on('game_started', (data) => {
             gameState = data;
-            hasClickedReadyToVote = false; // Reset for new game
+            hasClickedReadyToVote = false;
             if (data.scoreboard) {
                 scoreboardData = data.scoreboard;
             }
             showScreen('game-screen');
             updateGameDisplay();
-            updateGameLocations(); // Show locations for reference
+            updateGameLocations();
             addToLog('🎮 Game started!');
             
             if (data.isImposter) {
@@ -938,12 +1140,16 @@
 
         socket.on('question_asked', (data) => {
             gameState.currentQuestion = data;
+            gameState.questionAskedThisTurn = true;
+            gameState.waitingForAnswer = true;
+            
             document.getElementById('current-question').innerHTML = 
                 `<strong>${data.asker}</strong> asks <strong>${data.target}</strong>: "${data.question}"`;
             
             addToLog(`❓ ${data.asker} asks ${data.target}: ${data.question}`);
             
-            // If this player is the target, show answer modal
+            updateGameDisplay();
+            
             if (data.targetId === socket.id) {
                 document.getElementById('modal-question').innerHTML = 
                     `<strong>${data.asker}</strong> asks: "${data.question}"`;
@@ -954,6 +1160,12 @@
 
         socket.on('answer_submitted', (data) => {
             addToLog(`💬 ${data.target}: ${data.answer}`);
+            
+            if (gameState.currentQuestion && gameState.currentQuestion.asker === playerName) {
+                gameState.questionAskedThisTurn = false;
+                gameState.waitingForAnswer = false;
+                updateQuestionStatus('ready', 'Answer received! You can ask another question if it\'s still your turn.');
+            }
         });
 
         socket.on('game_updated', (data) => {
@@ -974,7 +1186,6 @@
         socket.on('vote_submitted', (data) => {
             addToLog(`🗳️ ${data.voter} voted (${data.votesReceived}/${data.totalPlayers})`);
             
-            // Store scoreboard for round summary when voting completes
             if (data.votesReceived === data.totalPlayers) {
                 roundEndScoreboard = {
                     round: gameState.currentRound,
@@ -986,7 +1197,6 @@
         socket.on('ready_count_updated', (data) => {
             addToLog(`🗳️ ${data.readyCount}/${data.requiredCount} players ready to vote`);
             
-            // Update the ready count display
             if (gameState.status === 'playing') {
                 gameState.readyToVoteCount = data.readyCount;
                 updateGameDisplay();
@@ -1008,11 +1218,74 @@
             updateDetailedScoreboard();
         });
 
+        socket.on('learning_configured', (data) => {
+            showSuccess(data.message);
+            hideLearningSettings();
+        });
+
+        socket.on('detailed_learning_stats', (stats) => {
+            const display = document.getElementById('learning-stats-display');
+            if (display) {
+                display.innerHTML = `
+                    <div class="learning-stats-grid">
+                        <div class="stat-item">
+                            <h5>Multiplayer Games</h5>
+                            <div class="stat-value">${stats.multiplayer.totalGames}</div>
+                            <div class="stat-detail">
+                                Q&As: ${stats.multiplayer.totalQAs}<br>
+                                Votes: ${stats.multiplayer.totalVotes}
+                            </div>
+                        </div>
+                        <div class="stat-item">
+                            <h5>AI Games</h5>
+                            <div class="stat-value">${stats.ai.totalGames}</div>
+                            <div class="stat-detail">
+                                Q&As: ${stats.ai.totalQAs}<br>
+                                Votes: ${stats.ai.totalVotes}
+                            </div>
+                        </div>
+                        <div class="stat-item">
+                            <h5>Total Combined</h5>
+                            <div class="stat-value">${stats.combined.totalGames}</div>
+                            <div class="stat-detail">
+                                Q&As: ${stats.combined.totalQAs}<br>
+                                Votes: ${stats.combined.totalVotes}
+                            </div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 1rem; text-align: center; font-size: 0.9rem; color: rgba(255,255,255,0.7);">
+                        Last updated: ${new Date().toLocaleString()}
+                    </div>
+                `;
+            }
+        });
+
+        socket.on('learning_files_combined', (result) => {
+            if (result.success) {
+                showSuccess(`Learning files combined! File: ${result.combinedFile}`);
+            } else {
+                showError(`Failed to combine files: ${result.error}`);
+            }
+        });
+
+        socket.on('learning_data_exported', (data) => {
+            const blob = new Blob([data.data], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = data.filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            showSuccess(`Learning data exported as ${data.filename}`);
+        });
+
         socket.on('error', (message) => {
             showError(message);
         });
 
-        // UI update functions
         function updateLobbyPlayers(players) {
             const container = document.getElementById('lobby-players');
             container.innerHTML = '';
@@ -1030,23 +1303,26 @@
                 container.appendChild(div);
             });
 
-            // Update ready button
             const readyBtn = document.getElementById('ready-btn');
             const startBtn = document.getElementById('start-btn');
+            const customLocationsBtn = document.getElementById('custom-locations-btn');
+            const learningSettingsBtn = document.getElementById('learning-settings-btn');
             
             if (isHost) {
                 const allReady = players.filter(p => !p.isHost).every(p => p.isReady);
                 const hasEnoughPlayers = players.length >= 3;
                 
                 startBtn.style.display = (allReady && hasEnoughPlayers) ? 'inline-block' : 'none';
-                document.getElementById('custom-locations-btn').style.display = 'inline-block';
+                customLocationsBtn.style.display = 'inline-block';
+                learningSettingsBtn.style.display = 'inline-block';
                 readyBtn.style.display = 'none';
             } else {
                 const currentPlayer = players.find(p => p.name === playerName);
                 readyBtn.textContent = currentPlayer?.isReady ? 'Cancel Ready' : 'Ready Up';
                 readyBtn.className = `btn ${currentPlayer?.isReady ? 'btn-warning' : 'btn-primary'}`;
                 startBtn.style.display = 'none';
-                document.getElementById('custom-locations-btn').style.display = 'none';
+                customLocationsBtn.style.display = 'none';
+                learningSettingsBtn.style.display = 'none';
             }
         }
 
@@ -1085,7 +1361,6 @@
         function updateGameDisplay() {
             if (!gameState.playerOrder) return;
 
-            // Update game info
             document.getElementById('current-round').textContent = gameState.currentRound || 1;
             document.getElementById('questions-count').textContent = 
                 `${gameState.questionsThisRound || 0}/${gameState.questionsPerRound || 5}`;
@@ -1094,7 +1369,6 @@
             const currentPlayer = gameState.playerOrder[currentPlayerIndex];
             document.getElementById('current-turn').textContent = currentPlayer?.name || '-';
 
-            // Update role display
             const roleDisplay = document.getElementById('role-display');
             if (gameState.isImposter) {
                 roleDisplay.className = 'role-display role-imposter';
@@ -1106,7 +1380,6 @@
                 document.getElementById('imposter-reveal-section').style.display = 'none';
             }
 
-            // Update players display
             const playersContainer = document.getElementById('game-players');
             playersContainer.innerHTML = '';
             
@@ -1119,7 +1392,6 @@
                 playersContainer.appendChild(div);
             });
 
-            // Update target selection
             const targetSelect = document.getElementById('target-select');
             targetSelect.innerHTML = '<option value="">Select player to ask</option>';
             
@@ -1132,19 +1404,29 @@
                 }
             });
 
-            // Show/hide ask section based on turn
             const askSection = document.getElementById('ask-section');
             const isMyTurn = gameState.playerOrder?.[gameState.currentTurn]?.isYou;
+            
             askSection.style.display = (isMyTurn && gameState.status === 'playing') ? 'block' : 'none';
 
-            // Show/hide ready to vote section
+            if (isMyTurn && gameState.status === 'playing') {
+                if (gameState.waitingForAnswer) {
+                    updateQuestionStatus('waiting', 'Waiting for answer to your question...');
+                } else if (gameState.questionAskedThisTurn) {
+                    updateQuestionStatus('asked', 'You have already asked a question this turn.');
+                } else {
+                    updateQuestionStatus('ready', 'Your turn! Select a player and ask a question.');
+                }
+            } else {
+                document.getElementById('question-status').style.display = 'none';
+            }
+
             const readyToVoteSection = document.getElementById('ready-to-vote-section');
             const readyCountDisplay = document.getElementById('ready-count-display');
             const requiredCountSpan = document.getElementById('required-count');
             const readyToVoteBtn = document.getElementById('ready-to-vote-btn');
 
             if (gameState.status === 'playing' && gameState.questionsThisRound >= gameState.questionsPerRound) {
-                // Show ready to vote section when round is complete
                 readyToVoteSection.style.display = 'block';
                 
                 const readyCount = gameState.readyToVoteCount || 0;
@@ -1153,7 +1435,6 @@
                 readyCountDisplay.textContent = `${readyCount}/${requiredCount} players ready`;
                 requiredCountSpan.textContent = requiredCount;
                 
-                // Update button state based on whether player has clicked
                 if (hasClickedReadyToVote) {
                     readyToVoteBtn.textContent = 'Ready! Waiting for others...';
                     readyToVoteBtn.disabled = true;
@@ -1167,7 +1448,6 @@
                 readyToVoteSection.style.display = 'none';
             }
 
-            // Update in-game scoreboard
             updateGameScoreboard();
         }
 
@@ -1198,7 +1478,6 @@
         }
 
         function updateDetailedScoreboard() {
-            // Update current scores tab
             const currentTab = document.getElementById('detailed-scoreboard');
             if (scoreboardData.length === 0) {
                 currentTab.innerHTML = '<p>No data available yet.</p>';
@@ -1229,7 +1508,6 @@
                 currentTab.innerHTML = html;
             }
 
-            // Update game history tab
             const historyTab = document.getElementById('game-history-content');
             if (gameHistory.length === 0) {
                 historyTab.innerHTML = '<p>No games completed yet.</p>';
@@ -1254,7 +1532,6 @@
                 historyTab.innerHTML = html;
             }
 
-            // Update detailed stats tab
             const statsTab = document.getElementById('detailed-stats-content');
             if (scoreboardData.length === 0) {
                 statsTab.innerHTML = '<p>No stats available yet.</p>';
@@ -1289,9 +1566,8 @@
             
             voteOptions.innerHTML = '';
             
-            // Add all players as voting options EXCEPT the current player (no self-voting)
             gameState.playerOrder?.forEach(player => {
-                if (!player.isYou) { // Don't allow voting for yourself
+                if (!player.isYou) {
                     const button = document.createElement('button');
                     button.className = 'btn btn-danger';
                     button.textContent = player.name;
@@ -1301,10 +1577,7 @@
             });
             
             votingSection.style.display = 'block';
-            
-            // Hide ready to vote section when voting starts
             document.getElementById('ready-to-vote-section').style.display = 'none';
-            
             addToLog('🗳️ Voting phase started! Choose who you think is the imposter.');
         }
 
@@ -1322,7 +1595,6 @@
                 `;
             }
 
-            // Show game summary
             if (gameState.gameHistory) {
                 let summaryHTML = '<h4>Game Summary:</h4>';
                 gameState.gameHistory.forEach(entry => {
@@ -1368,7 +1640,6 @@
             addToLog(message);
         }
 
-        // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && e.ctrlKey) {
                 if (document.getElementById('answer-modal').classList.contains('active')) {
