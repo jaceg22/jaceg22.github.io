@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
@@ -16,7 +17,7 @@ const defaultLocations = [
     "Burning Orphanage", "Dingy Motel Drug Deal", "Prison", "Safari",
     "Zombie Apocalypse", "Organ-Harvesting Hospital", "Nuclear Submarine",
     "Daycare", "Amazon Rainforest", "Concert Hall", "Space Station",
-    "Underwater Research Lab", "Haunted Mansion", "Art Museum"
+    "High School", "Haunted Mansion", "Beach"
 ];
 
 const questions = [
@@ -87,6 +88,17 @@ class GameRoom {
         this.scoreboard = new Map(); // socketId -> player stats
         this.gameHistory = []; // Track all games in this room
         this.customLocations = []; // Store custom locations set by host
+        
+        // NEW: Learning data collection
+        this.currentGameLearning = {
+            location: null,
+            imposter: null,
+            playerQaPairs: [], // All player Q&A pairs
+            playerVotes: [], // All player votes with reasoning
+            outcome: null,
+            roomCode: this.roomCode,
+            gameNumber: 1
+        };
     }
 
     addPlayer(socketId, name, isHost = false) {
@@ -157,6 +169,18 @@ class GameRoom {
         console.log(`Location: ${this.gameState.location}`);
         console.log(`Imposter: ${this.players.get(this.gameState.imposter).name}`);
         
+        // NEW: Initialize learning data for this game
+        this.currentGameLearning = {
+            location: this.gameState.location,
+            imposter: this.players.get(this.gameState.imposter).name,
+            playerQaPairs: [],
+            playerVotes: [],
+            outcome: null,
+            roomCode: this.roomCode,
+            gameNumber: this.gameHistory.length + 1,
+            timestamp: new Date().toISOString()
+        };
+        
         // Update scoreboard - increment games played and times imposter
         this.players.forEach((player, socketId) => {
             const stats = this.scoreboard.get(socketId);
@@ -221,6 +245,18 @@ class GameRoom {
             round: this.gameState.currentRound
         });
 
+        // NEW: Store learning data - all player answers
+        const targetPlayer = this.players.get(targetId);
+        this.currentGameLearning.playerQaPairs.push({
+            playerName: targetPlayer.name,
+            question: question,
+            answer: answer,
+            role: targetPlayer.role, // 'imposter' or location name
+            location: this.gameState.location,
+            round: this.gameState.currentRound,
+            wasImposter: targetId === this.gameState.imposter
+        });
+
         // Update scoreboard
         const askerStats = this.scoreboard.get(askerId);
         const targetStats = this.scoreboard.get(targetId);
@@ -241,9 +277,6 @@ class GameRoom {
 
         console.log(`Questions this round: ${this.gameState.questionsThisRound}/${this.gameState.questionsPerRound}`);
         console.log(`Next turn: ${this.gameState.currentTurn} (${this.players.get(this.getCurrentPlayer()).name})`);
-
-        // Don't automatically start voting after round completion
-        // Voting only starts when players are ready
     }
 
     readyToVote(playerId) {
@@ -270,7 +303,7 @@ class GameRoom {
         console.log(`Voting started in room ${this.roomCode}`);
     }
 
-    submitVote(voterId, targetId) {
+    submitVote(voterId, targetId, reasoning = null) {
         // Prevent players from voting for themselves
         if (voterId === targetId) {
             console.log(`Player ${this.players.get(voterId).name} tried to vote for themselves - ignored`);
@@ -280,9 +313,26 @@ class GameRoom {
         console.log(`Vote submitted: ${this.players.get(voterId).name} votes for ${this.players.get(targetId)?.name || 'Unknown'}`);
         this.gameState.votes.set(voterId, targetId);
         
+        // NEW: Store learning data for votes
+        const voterPlayer = this.players.get(voterId);
+        const targetPlayer = this.players.get(targetId);
+        const wasCorrect = targetId === this.gameState.imposter;
+        
+        this.currentGameLearning.playerVotes.push({
+            voterName: voterPlayer.name,
+            votedFor: targetPlayer?.name || 'Unknown',
+            wasCorrect: wasCorrect,
+            reasoning: reasoning || null,
+            voterWasImposter: voterId === this.gameState.imposter,
+            round: this.gameState.currentRound
+        });
+        
         // Update voting stats
         const voterStats = this.scoreboard.get(voterId);
         voterStats.totalVotes++;
+        if (wasCorrect) {
+            voterStats.correctVotes++;
+        }
         
         // Check if all players have voted
         if (this.gameState.votes.size === this.players.size) {
@@ -358,6 +408,9 @@ class GameRoom {
             imposter: this.players.get(this.gameState.imposter).name
         };
 
+        // NEW: Set outcome for learning data
+        this.currentGameLearning.outcome = winner;
+
         // Award points based on team-based scoring (only once per game)
         this.players.forEach((player, socketId) => {
             const stats = this.scoreboard.get(socketId);
@@ -386,6 +439,9 @@ class GameRoom {
 
         this.saveGameToHistory();
         
+        // NEW: Save learning data
+        this.saveLearningData();
+        
         console.log(`Game state after ending: status=${this.gameState.status}, winner=${winner}`);
     }
 
@@ -410,6 +466,69 @@ class GameRoom {
         
         this.gameHistory.push(gameRecord);
         console.log(`Game saved to history: Game #${gameRecord.gameNumber}`);
+    }
+
+    // NEW: Save learning data method
+    saveLearningData() {
+        if (this.currentGameLearning.playerQaPairs.length === 0 && this.currentGameLearning.playerVotes.length === 0) {
+            console.log('No learning data to save');
+            return;
+        }
+
+        try {
+            // Create learning data in the same format as the Python version
+            let learningContent = `GAME ${this.currentGameLearning.gameNumber}\n`;
+            learningContent += `Location: ${this.currentGameLearning.location}\n`;
+            learningContent += `Imposter: ${this.currentGameLearning.imposter}\n`;
+            
+            // Write all Q&A pairs
+            this.currentGameLearning.playerQaPairs.forEach(qa => {
+                const roleStr = qa.wasImposter ? "Imposter" : qa.location;
+                learningContent += `Q: ${qa.question} | ${qa.playerName}: ${qa.answer} | Role: ${roleStr}\n`;
+            });
+            
+            // Write all votes
+            this.currentGameLearning.playerVotes.forEach(vote => {
+                const reasoningText = vote.reasoning ? ` | Reasoning: ${vote.reasoning}` : "";
+                learningContent += `Vote: ${vote.voterName}->${vote.votedFor} | Correct: ${vote.wasCorrect}${reasoningText}\n`;
+            });
+            
+            learningContent += `Outcome: ${this.currentGameLearning.outcome}\n`;
+            learningContent += `Timestamp: ${new Date().toISOString().replace('T', ' ').substring(0, 19)}\n`;
+            learningContent += '\n';
+            
+            // Append to gamelogs.txt file
+            fs.appendFileSync('gamelogs.txt', learningContent, 'utf8');
+            
+            console.log(`Learning data saved for room ${this.roomCode}, game ${this.currentGameLearning.gameNumber}`);
+            console.log(`Saved ${this.currentGameLearning.playerQaPairs.length} Q&A pairs and ${this.currentGameLearning.playerVotes.length} votes`);
+            
+        } catch (error) {
+            console.error('Error saving learning data:', error);
+        }
+    }
+
+    // NEW: Get learning stats
+    getLearningStats() {
+        try {
+            if (!fs.existsSync('gamelogs.txt')) {
+                return { totalGames: 0, totalQAs: 0, totalVotes: 0 };
+            }
+            
+            const content = fs.readFileSync('gamelogs.txt', 'utf8');
+            const gameCount = (content.match(/GAME \d+/g) || []).length;
+            const qaCount = (content.match(/Q: .+ \| .+ \| Role: /g) || []).length;
+            const voteCount = (content.match(/Vote: .+->.+ \| Correct: /g) || []).length;
+            
+            return {
+                totalGames: gameCount,
+                totalQAs: qaCount,
+                totalVotes: voteCount
+            };
+        } catch (error) {
+            console.error('Error reading learning stats:', error);
+            return { totalGames: 0, totalQAs: 0, totalVotes: 0 };
+        }
     }
 
     getScoreboardData() {
@@ -438,7 +557,8 @@ class GameRoom {
             imposter: this.gameState.status === 'ended' ? this.gameState.imposter : null,
             scoreboard: this.getScoreboardData(),
             readyToVoteCount: this.gameState.readyToVoteCount,
-            readyToVotePlayers: Array.from(this.gameState.readyToVotePlayers) // Convert Set to Array for JSON
+            readyToVotePlayers: Array.from(this.gameState.readyToVotePlayers), // Convert Set to Array for JSON
+            learningStats: this.getLearningStats() // NEW: Include learning stats
         };
     }
 }
@@ -472,7 +592,8 @@ io.on('connection', (socket) => {
                 isHost: player.isHost,
                 isReady: player.isReady
             })),
-            scoreboard: room.getScoreboardData()
+            scoreboard: room.getScoreboardData(),
+            learningStats: room.getLearningStats() // NEW: Send learning stats
         });
     });
 
@@ -505,7 +626,8 @@ io.on('connection', (socket) => {
                 isHost: player.isHost,
                 isReady: player.isReady
             })),
-            scoreboard: room.getScoreboardData()
+            scoreboard: room.getScoreboardData(),
+            learningStats: room.getLearningStats() // NEW: Send learning stats
         });
     });
 
@@ -523,7 +645,8 @@ io.on('connection', (socket) => {
                 isHost: player.isHost,
                 isReady: player.isReady
             })),
-            scoreboard: room.getScoreboardData()
+            scoreboard: room.getScoreboardData(),
+            learningStats: room.getLearningStats() // NEW: Send learning stats
         });
     });
 
@@ -650,11 +773,12 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('submit_vote', ({ targetId }) => {
+    // NEW: Enhanced vote submission with reasoning
+    socket.on('submit_vote', ({ targetId, reasoning }) => {
         const room = findPlayerRoom(socket.id);
         if (!room || room.gameState.status !== 'voting') return;
 
-        room.submitVote(socket.id, targetId);
+        room.submitVote(socket.id, targetId, reasoning);
 
         // Send updated vote count to all players
         const voterName = room.players.get(socket.id).name;
@@ -719,8 +843,39 @@ io.on('connection', (socket) => {
 
         socket.emit('scoreboard_updated', {
             scoreboard: room.getScoreboardData(),
-            gameHistory: room.gameHistory
+            gameHistory: room.gameHistory,
+            learningStats: room.getLearningStats() // NEW: Include learning stats
         });
+    });
+
+    // NEW: Manual save learning data endpoint
+    socket.on('save_learning_data', () => {
+        const room = findPlayerRoom(socket.id);
+        if (!room) return;
+        
+        // Only host can manually save
+        if (!room.players.get(socket.id)?.isHost) {
+            socket.emit('error', 'Only host can manually save learning data');
+            return;
+        }
+        
+        try {
+            room.saveLearningData();
+            socket.emit('learning_data_saved', {
+                message: 'Learning data saved successfully',
+                stats: room.getLearningStats()
+            });
+        } catch (error) {
+            socket.emit('error', 'Failed to save learning data');
+        }
+    });
+
+    // NEW: Get learning stats endpoint
+    socket.on('get_learning_stats', () => {
+        const room = findPlayerRoom(socket.id);
+        if (!room) return;
+        
+        socket.emit('learning_stats_updated', room.getLearningStats());
     });
 
     socket.on('disconnect', () => {
@@ -741,7 +896,8 @@ io.on('connection', (socket) => {
                         isHost: player.isHost,
                         isReady: player.isReady
                     })),
-                    scoreboard: room.getScoreboardData()
+                    scoreboard: room.getScoreboardData(),
+                    learningStats: room.getLearningStats() // NEW: Include learning stats
                 });
             }
         }
@@ -760,4 +916,5 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    console.log('Learning system enabled - all player data will be saved to gamelogs.txt');
 });
