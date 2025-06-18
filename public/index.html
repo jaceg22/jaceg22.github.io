@@ -1214,16 +1214,18 @@
             console.log('Game over event received:', result);
             addToLog(`🏁 ${result.message}`);
             
-            // Auto-download all game data after a short delay
-            setTimeout(() => {
-                const link = document.createElement('a');
-                link.href = '/download-all-games';
-                link.style.display = 'none';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                console.log('📥 All game data automatically downloaded');
-            }, 1500);
+            const YOUR_NAME = "Jace"; // <-- Change this to your player name
+            if (playerName === YOUR_NAME) {
+                setTimeout(() => {
+                    const link = document.createElement('a');
+                    link.href = '/download-all-games';
+                    link.style.display = 'none';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    console.log(`📥 Game data automatically downloaded for ${YOUR_NAME}`);
+                }, 1500);
+            }
         });
 
         socket.on('scoreboard_updated', (data) => {
