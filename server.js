@@ -483,45 +483,46 @@ class GameRoom {
             return;
         }
 
-        try {
-            const filename = 'gamelogs.txt';
-            
-            // Simple, readable format
-            let gameLog = `GAME ${this.currentGameData.gameNumber}\n`;
-            gameLog += `Timestamp: ${this.currentGameData.timestamp}\n`;
-            gameLog += `Room: ${this.currentGameData.roomCode}\n`;
-            gameLog += `Location: ${this.currentGameData.location}\n`;
-            gameLog += `Imposter: ${this.currentGameData.imposter}\n`;
-            gameLog += `Outcome: ${this.currentGameData.outcome}\n`;
+        // Simple, readable format
+        let gameLog = `\n${'='.repeat(60)}\n`;
+        gameLog += `GAME ${this.currentGameData.gameNumber}\n`;
+        gameLog += `Timestamp: ${this.currentGameData.timestamp}\n`;
+        gameLog += `Room: ${this.currentGameData.roomCode}\n`;
+        gameLog += `Location: ${this.currentGameData.location}\n`;
+        gameLog += `Imposter: ${this.currentGameData.imposter}\n`;
+        gameLog += `Outcome: ${this.currentGameData.outcome}\n`;
+        gameLog += '\n';
+        
+        // Log all Q&A pairs
+        gameLog += 'QUESTIONS AND ANSWERS:\n';
+        this.currentGameData.playerQAs.forEach(qa => {
+            gameLog += `${qa.asker} asks ${qa.target}: "${qa.question}"\n`;
+            gameLog += `${qa.target} (${qa.targetRole}): "${qa.answer}"\n`;
             gameLog += '\n';
-            
-            // Log all Q&A pairs
-            gameLog += 'QUESTIONS AND ANSWERS:\n';
-            this.currentGameData.playerQAs.forEach(qa => {
-                gameLog += `${qa.asker} asks ${qa.target}: "${qa.question}"\n`;
-                gameLog += `${qa.target} (${qa.targetRole}): "${qa.answer}"\n`;
-                gameLog += '\n';
-            });
-            
-            // Log all votes
-            gameLog += 'VOTES:\n';
-            this.currentGameData.playerVotes.forEach(vote => {
-                const correctText = vote.wasCorrect ? 'CORRECT' : 'WRONG';
-                gameLog += `${vote.voter} votes for ${vote.votedFor} (${correctText})\n`;
-                if (vote.reasoning) {
-                    gameLog += `Reasoning: ${vote.reasoning}\n`;
-                }
-            });
-            
-            gameLog += '\n' + '='.repeat(50) + '\n\n';
-            
-            // Append to file
-            fs.appendFileSync(filename, gameLog, 'utf8');
-            
-            console.log(`Game data saved to ${filename}`);
-            
+        });
+        
+        // Log all votes
+        gameLog += 'VOTES:\n';
+        this.currentGameData.playerVotes.forEach(vote => {
+            const correctText = vote.wasCorrect ? 'CORRECT' : 'WRONG';
+            gameLog += `${vote.voter} votes for ${vote.votedFor} (${correctText})\n`;
+            if (vote.reasoning) {
+                gameLog += `Reasoning: ${vote.reasoning}\n`;
+            }
+        });
+        
+        gameLog += `${'='.repeat(60)}\n`;
+        
+        // Log to console (visible in Render logs)
+        console.log('GAME DATA SAVED:');
+        console.log(gameLog);
+        
+        // Also try to save to file (will work locally, won't persist on Render)
+        try {
+            fs.appendFileSync('gamelogs.txt', gameLog, 'utf8');
+            console.log('✅ Also saved to local file');
         } catch (error) {
-            console.error('Error saving game data:', error);
+            console.log('ℹ️ File save failed (expected on Render):', error.message);
         }
     }
 
