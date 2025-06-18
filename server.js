@@ -3,6 +3,7 @@ const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
 const fs = require('fs');
+const allGameData = [];
 
 const app = express();
 const server = http.createServer(app);
@@ -10,6 +11,50 @@ const io = socketIo(server);
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/download-all-games', (req, res) => {
+    if (allGameData.length === 0) {
+        res.status(404).send('No game data available yet');
+        return;
+    }
+
+    let output = '';
+    allGameData.forEach(gameData => {
+        output += '============================================================\n';
+        output += `GAME ${gameData.gameNumber}\n`;
+        output += `Timestamp: ${gameData.timestamp}\n`;
+        output += `Room: ${gameData.roomCode}\n`;
+        output += `Location: ${gameData.location}\n`;
+        output += `Imposter: ${gameData.imposter}\n`;
+        output += `Outcome: ${gameData.outcome}\n`;
+        output += '\n';
+        
+        output += 'QUESTIONS AND ANSWERS:\n';
+        gameData.playerQAs.forEach(qa => {
+            output += `${qa.asker} asks ${qa.target}: "${qa.question}"\n`;
+            output += `${qa.target} (${qa.targetRole}): "${qa.answer}"\n`;
+            output += '\n';
+        });
+        
+        output += 'VOTES:\n';
+        gameData.playerVotes.forEach(vote => {
+            const correctText = vote.wasCorrect ? 'CORRECT' : 'WRONG';
+            output += `${vote.voter} votes for ${vote.votedFor} (${correctText})\n`;
+            if (vote.reasoning) {
+                output += `Reasoning: ${vote.reasoning}\n`;
+            }
+        });
+        
+        output += '============================================================\n\n';
+    });
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `mole-all-games-${timestamp}.txt`;
+    
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'text/plain');
+    res.send(output);
+});
 
 // Game configuration
 const defaultLocations = [
@@ -482,8 +527,11 @@ class GameRoom {
             console.log('No game data to save');
             return;
         }
-
-        // Simple, readable format
+    
+        // Store in global array for download
+        allGameData.push(JSON.parse(JSON.stringify(this.currentGameData)));
+    
+        // Console logging (same as before)
         let gameLog = `\n${'='.repeat(60)}\n`;
         gameLog += `GAME ${this.currentGameData.gameNumber}\n`;
         gameLog += `Timestamp: ${this.currentGameData.timestamp}\n`;
@@ -493,7 +541,6 @@ class GameRoom {
         gameLog += `Outcome: ${this.currentGameData.outcome}\n`;
         gameLog += '\n';
         
-        // Log all Q&A pairs
         gameLog += 'QUESTIONS AND ANSWERS:\n';
         this.currentGameData.playerQAs.forEach(qa => {
             gameLog += `${qa.asker} asks ${qa.target}: "${qa.question}"\n`;
@@ -501,7 +548,6 @@ class GameRoom {
             gameLog += '\n';
         });
         
-        // Log all votes
         gameLog += 'VOTES:\n';
         this.currentGameData.playerVotes.forEach(vote => {
             const correctText = vote.wasCorrect ? 'CORRECT' : 'WRONG';
@@ -513,11 +559,11 @@ class GameRoom {
         
         gameLog += `${'='.repeat(60)}\n`;
         
-        // Log to console (visible in Render logs)
         console.log('GAME DATA SAVED:');
         console.log(gameLog);
+        console.log(`📊 Total games stored: ${allGameData.length} (available for download)`);
         
-        // Also try to save to file (will work locally, won't persist on Render)
+        // Also try to save to file (for local development)
         try {
             fs.appendFileSync('gamelogs.txt', gameLog, 'utf8');
             console.log('✅ Also saved to local file');
