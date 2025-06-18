@@ -572,7 +572,7 @@
                             <option value="">Select player to ask</option>
                         </select>
                     </div>
-                    <button id="ask-question-btn" class="btn btn-primary" onclick="askQuestion()">🎲 Ask Random Question</button>
+                    <button id="ask-question-btn" class="btn btn-primary" onclick="askQuestion()">🎲 Ask Question</button>
                     <div id="question-status" style="margin-top: 0.5rem; font-style: italic; color: rgba(255,255,255,0.7); display: none;">
                         <!-- Status messages will appear here -->
                     </div>
@@ -954,7 +954,7 @@
                 switch(status) {
                     case 'ready':
                         askBtn.disabled = false;
-                        askBtn.textContent = '🎲 Ask Random Question';
+                        askBtn.textContent = '🎲 Ask Question';
                         break;
                     case 'asking':
                         askBtn.disabled = true;
@@ -1122,7 +1122,10 @@
 
         socket.on('game_started', (data) => {
             gameState = data;
+            
+            // RESET ALL CLIENT-SIDE VOTING STATES
             hasClickedReadyToVote = false;
+            
             if (data.scoreboard) {
                 scoreboardData = data.scoreboard;
             }

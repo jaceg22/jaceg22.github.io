@@ -197,7 +197,7 @@ class GameRoom {
             }
         });
         
-        // Initialize game state
+        // Initialize game state - RESET ALL VOTING STATES
         this.gameState.status = 'playing';
         this.gameState.currentTurn = 0;
         this.gameState.questionsThisRound = 0;
@@ -206,8 +206,11 @@ class GameRoom {
         this.gameState.votes.clear();
         this.gameState.playerAnswers.clear();
         this.gameState.currentQuestion = null;
+        
+        // RESET VOTING READY STATES
         this.gameState.readyToVoteCount = 0;
         this.gameState.readyToVotePlayers.clear();
+        
         this.gameState.questionAskedThisTurn = false;
         this.gameState.waitingForAnswer = false;
         
