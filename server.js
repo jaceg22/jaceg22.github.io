@@ -113,6 +113,7 @@ class GameRoom {
     constructor(roomCode) {
         this.roomCode = roomCode;
         this.players = new Map(); // socketId -> {name, isHost, isReady}
+        this.isLocked = false; // NEW: Track if room is locked
         this.gameState = {
             status: 'waiting', // waiting, playing, voting, ended
             location: null,
@@ -149,9 +150,36 @@ class GameRoom {
         };
     }
 
-    addPlayer(socketId, name, isHost = false) {
+    // NEW: Generate unique name if duplicate exists
+    generateUniqueName(requestedName) {
+        const existingNames = Array.from(this.players.values()).map(p => p.name);
+        
+        if (!existingNames.includes(requestedName)) {
+            return requestedName;
+        }
+        
+        let counter = 2;
+        let uniqueName = `${requestedName} ${counter}`;
+        
+        while (existingNames.includes(uniqueName)) {
+            counter++;
+            uniqueName = `${requestedName} ${counter}`;
+        }
+        
+        return uniqueName;
+    }
+
+    // NEW: Lock/unlock room
+    setLocked(locked) {
+        this.isLocked = locked;
+    }
+
+    addPlayer(socketId, requestedName, isHost = false) {
+        // Generate unique name if duplicate
+        const uniqueName = this.generateUniqueName(requestedName);
+        
         this.players.set(socketId, {
-            name,
+            name: uniqueName,
             isHost,
             isReady: false,
             role: null // Will be 'imposter' or the location name
@@ -159,7 +187,7 @@ class GameRoom {
         
         // Initialize scoreboard for new player
         this.scoreboard.set(socketId, {
-            name,
+            name: uniqueName,
             gamesPlayed: 0,
             gamesWon: 0,
             timesImposter: 0,
@@ -175,6 +203,34 @@ class GameRoom {
         if (isHost) {
             this.hostId = socketId;
         }
+
+        return uniqueName; // Return the actual name used
+    }
+
+    // NEW: Kick player (host only)
+    kickPlayer(hostSocketId, targetSocketId) {
+        // Verify the kicker is the host
+        if (hostSocketId !== this.hostId) {
+            return { error: 'Only the host can kick players' };
+        }
+
+        // Can't kick yourself
+        if (hostSocketId === targetSocketId) {
+            return { error: 'You cannot kick yourself' };
+        }
+
+        const targetPlayer = this.players.get(targetSocketId);
+        if (!targetPlayer) {
+            return { error: 'Player not found' };
+        }
+
+        // Remove the player
+        this.removePlayer(targetSocketId);
+        
+        return { 
+            success: true, 
+            kickedPlayerName: targetPlayer.name 
+        };
     }
 
     removePlayer(socketId) {
@@ -681,7 +737,8 @@ class GameRoom {
             scoreboard: this.getScoreboardData(),
             readyToVoteCount: this.gameState.readyToVoteCount,
             readyToVotePlayers: Array.from(this.gameState.readyToVotePlayers),
-            gameStats: this.getGameStats() // SIMPLIFIED: Basic stats only
+            gameStats: this.getGameStats(), // SIMPLIFIED: Basic stats only
+            isLocked: this.isLocked // NEW: Include lock status
         };
     }
 }
@@ -703,11 +760,11 @@ io.on('connection', (socket) => {
     socket.on('create_room', (playerName) => {
         const roomCode = generateRoomCode();
         const room = new GameRoom(roomCode);
-        room.addPlayer(socket.id, playerName, true);
+        const actualName = room.addPlayer(socket.id, playerName, true);
         gameRooms.set(roomCode, room);
         
         socket.join(roomCode);
-        socket.emit('room_created', { roomCode, isHost: true });
+        socket.emit('room_created', { roomCode, isHost: true, actualName });
         socket.emit('room_updated', { 
             players: Array.from(room.players.entries()).map(([id, player]) => ({
                 id, 
@@ -715,7 +772,8 @@ io.on('connection', (socket) => {
                 isHost: player.isHost,
                 isReady: player.isReady
             })),
-            scoreboard: room.getScoreboardData()
+            scoreboard: room.getScoreboardData(),
+            isLocked: room.isLocked
         });
     });
 
@@ -723,6 +781,12 @@ io.on('connection', (socket) => {
         const room = gameRooms.get(roomCode);
         if (!room) {
             socket.emit('error', 'Room not found');
+            return;
+        }
+        
+        // NEW: Check if room is locked
+        if (room.isLocked) {
+            socket.emit('error', 'Room is locked');
             return;
         }
         
@@ -736,9 +800,15 @@ io.on('connection', (socket) => {
             return;
         }
 
-        room.addPlayer(socket.id, playerName);
+        // NEW: Generate unique name and inform if changed
+        const actualName = room.addPlayer(socket.id, playerName);
         socket.join(roomCode);
-        socket.emit('room_joined', { roomCode, isHost: false });
+        socket.emit('room_joined', { 
+            roomCode, 
+            isHost: false, 
+            actualName,
+            nameChanged: actualName !== playerName
+        });
         
         // Notify all players in room
         io.to(roomCode).emit('room_updated', { 
@@ -748,7 +818,85 @@ io.on('connection', (socket) => {
                 isHost: player.isHost,
                 isReady: player.isReady
             })),
-            scoreboard: room.getScoreboardData()
+            scoreboard: room.getScoreboardData(),
+            isLocked: room.isLocked
+        });
+        
+        // If name was changed, notify the player
+        if (actualName !== playerName) {
+            socket.emit('name_changed', { 
+                originalName: playerName, 
+                newName: actualName 
+            });
+        }
+    });
+
+    // NEW: Lock/unlock room
+    socket.on('toggle_lock', () => {
+        const room = findPlayerRoom(socket.id);
+        if (!room || !room.players.get(socket.id)?.isHost) {
+            socket.emit('error', 'Only the host can lock/unlock the room');
+            return;
+        }
+
+        room.setLocked(!room.isLocked);
+        
+        // Notify all players
+        io.to(room.roomCode).emit('room_updated', { 
+            players: Array.from(room.players.entries()).map(([id, player]) => ({
+                id, 
+                name: player.name, 
+                isHost: player.isHost,
+                isReady: player.isReady
+            })),
+            scoreboard: room.getScoreboardData(),
+            isLocked: room.isLocked
+        });
+        
+        io.to(room.roomCode).emit('room_lock_changed', { 
+            isLocked: room.isLocked,
+            message: room.isLocked ? 'Room locked - no new players can join' : 'Room unlocked - new players can join'
+        });
+    });
+
+    // NEW: Kick player
+    socket.on('kick_player', ({ targetId }) => {
+        const room = findPlayerRoom(socket.id);
+        if (!room) {
+            socket.emit('error', 'Room not found');
+            return;
+        }
+
+        const result = room.kickPlayer(socket.id, targetId);
+        
+        if (result.error) {
+            socket.emit('error', result.error);
+            return;
+        }
+
+        // Notify the kicked player
+        io.to(targetId).emit('kicked', { 
+            message: 'You have been kicked from the room by the host',
+            roomCode: room.roomCode
+        });
+
+        // Disconnect the kicked player from the room
+        const kickedSocket = io.sockets.sockets.get(targetId);
+        if (kickedSocket) {
+            kickedSocket.leave(room.roomCode);
+        }
+
+        // Notify remaining players
+        io.to(room.roomCode).emit('player_kicked', {
+            kickedPlayerName: result.kickedPlayerName,
+            players: Array.from(room.players.entries()).map(([id, player]) => ({
+                id, 
+                name: player.name, 
+                isHost: player.isHost,
+                isReady: player.isReady
+            })),
+            scoreboard: room.getScoreboardData(),
+            isLocked: room.isLocked
         });
     });
 
@@ -766,7 +914,8 @@ io.on('connection', (socket) => {
                 isHost: player.isHost,
                 isReady: player.isReady
             })),
-            scoreboard: room.getScoreboardData()
+            scoreboard: room.getScoreboardData(),
+            isLocked: room.isLocked
         });
     });
 
@@ -977,7 +1126,8 @@ io.on('connection', (socket) => {
                         isHost: player.isHost,
                         isReady: player.isReady
                     })),
-                    scoreboard: room.getScoreboardData()
+                    scoreboard: room.getScoreboardData(),
+                    isLocked: room.isLocked
                 });
             }
         }

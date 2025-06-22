@@ -101,6 +101,7 @@
         .btn-danger { background: linear-gradient(45deg, #e74c3c, #c0392b); }
         .btn-warning { background: linear-gradient(45deg, #f39c12, #e67e22); }
         .btn-info { background: linear-gradient(45deg, #8e44ad, #9b59b6); }
+        .btn-secondary { background: linear-gradient(45deg, #95a5a6, #7f8c8d); }
 
         .btn:disabled {
             opacity: 0.6;
@@ -127,6 +128,7 @@
             text-align: center;
             border: 2px solid transparent;
             transition: all 0.3s ease;
+            position: relative;
         }
 
         .player-card.host {
@@ -140,6 +142,30 @@
         .player-card.current-turn {
             border-color: #e74c3c;
             animation: pulse 2s infinite;
+        }
+
+        /* NEW: Kick button styling */
+        .kick-btn {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: rgba(231, 76, 60, 0.8);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 25px;
+            height: 25px;
+            font-size: 12px;
+            cursor: pointer;
+            display: none;
+        }
+
+        .player-card:hover .kick-btn {
+            display: block;
+        }
+
+        .kick-btn:hover {
+            background: rgba(231, 76, 60, 1);
         }
 
         @keyframes pulse {
@@ -250,6 +276,24 @@
             margin: 1rem 0;
         }
 
+        .warning {
+            background: rgba(243, 156, 18, 0.2);
+            border: 1px solid #f39c12;
+            color: #f39c12;
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+        }
+
+        .info {
+            background: rgba(52, 152, 219, 0.2);
+            border: 1px solid #3498db;
+            color: #3498db;
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+        }
+
         .role-display {
             font-size: 1.2rem;
             font-weight: bold;
@@ -269,6 +313,30 @@
             background: rgba(39, 174, 96, 0.3);
             border: 2px solid #27ae60;
             color: #27ae60;
+        }
+
+        /* NEW: Lock status styling */
+        .lock-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            margin-left: 1rem;
+        }
+
+        .lock-status.locked {
+            background: rgba(231, 76, 60, 0.2);
+            color: #e74c3c;
+            border: 1px solid #e74c3c;
+        }
+
+        .lock-status.unlocked {
+            background: rgba(39, 174, 96, 0.2);
+            color: #27ae60;
+            border: 1px solid #27ae60;
         }
 
         .scoreboard {
@@ -518,12 +586,18 @@
         <!-- Lobby Screen -->
         <div id="lobby-screen" class="screen">
             <div class="card">
-                <h2>Room: <span id="room-display"></span></h2>
+                <div style="display: flex; align-items: center; margin-bottom: 1rem;">
+                    <h2>Room: <span id="room-display"></span></h2>
+                    <div id="lock-status" class="lock-status unlocked">
+                        🔓 Open
+                    </div>
+                </div>
                 <div id="lobby-players" class="players-list"></div>
                 
                 <div style="text-align: center; margin-top: 2rem;">
                     <button id="ready-btn" class="btn btn-warning" onclick="toggleReady()">Ready Up</button>
                     <button id="start-btn" class="btn btn-primary" onclick="startGame()" style="display: none;">🎮 Start Game</button>
+                    <button id="lock-btn" class="btn btn-secondary" onclick="toggleLock()" style="display: none;">🔒 Lock Room</button>
                     <button id="custom-locations-btn" class="btn btn-info" onclick="showCustomLocations()" style="display: none;">🎯 Custom Locations</button>
                     <button id="learning-settings-btn" class="btn btn-info" onclick="showLearningSettings()" style="display: none;">🧠 Learning Settings</button>
                     <button class="btn btn-info" onclick="showScoreboard()">📊 Scoreboard</button>
@@ -754,12 +828,14 @@
         let currentRoom = '';
         let isHost = false;
         let playerName = '';
+        let actualPlayerName = ''; // NEW: Track the actual name used (in case of deduplication)
         let isReady = false;
         let scoreboardData = [];
         let gameHistory = [];
         let roundEndScoreboard = null;
         let hasClickedReadyToVote = false;
         let customLocations = [];
+        let isRoomLocked = false; // NEW: Track room lock status
 
         const locations = [
             "Circus", "Amusement Park", "Crashing Airplane", "Titanic",
@@ -844,6 +920,21 @@
 
         function toggleReady() {
             socket.emit('toggle_ready');
+        }
+
+        // NEW: Toggle room lock
+        function toggleLock() {
+            if (!isHost) return;
+            socket.emit('toggle_lock');
+        }
+
+        // NEW: Kick player
+        function kickPlayer(targetId) {
+            if (!isHost) return;
+            
+            if (confirm('Are you sure you want to kick this player?')) {
+                socket.emit('kick_player', { targetId });
+            }
         }
 
         function startGame() {
@@ -1088,10 +1179,29 @@
             hideCustomLocations();
         }
 
+        // NEW: Update lock status display
+        function updateLockStatus(isLocked) {
+            isRoomLocked = isLocked;
+            const lockStatus = document.getElementById('lock-status');
+            const lockBtn = document.getElementById('lock-btn');
+            
+            if (isLocked) {
+                lockStatus.className = 'lock-status locked';
+                lockStatus.innerHTML = '🔒 Locked';
+                if (lockBtn) lockBtn.textContent = '🔓 Unlock Room';
+            } else {
+                lockStatus.className = 'lock-status unlocked';
+                lockStatus.innerHTML = '🔓 Open';
+                if (lockBtn) lockBtn.textContent = '🔒 Lock Room';
+            }
+        }
+
         // Socket event handlers
         socket.on('room_created', (data) => {
             currentRoom = data.roomCode;
             isHost = data.isHost;
+            actualPlayerName = data.actualName; // NEW: Store actual name
+            playerName = actualPlayerName;
             document.getElementById('room-display').textContent = currentRoom;
             showScreen('lobby-screen');
             showSuccess(`Room created! Code: ${currentRoom}`);
@@ -1100,15 +1210,51 @@
         socket.on('room_joined', (data) => {
             currentRoom = data.roomCode;
             isHost = data.isHost;
+            actualPlayerName = data.actualName; // NEW: Store actual name
+            playerName = actualPlayerName;
             document.getElementById('room-display').textContent = currentRoom;
             showScreen('lobby-screen');
             showSuccess(`Joined room: ${currentRoom}`);
+        });
+
+        // NEW: Handle name change notification
+        socket.on('name_changed', (data) => {
+            showWarning(`Your name was changed from "${data.originalName}" to "${data.newName}" because that name was already taken.`);
+        });
+
+        // NEW: Handle room lock changes
+        socket.on('room_lock_changed', (data) => {
+            updateLockStatus(data.isLocked);
+            showInfo(data.message);
+        });
+
+        // NEW: Handle being kicked
+        socket.on('kicked', (data) => {
+            showError(data.message);
+            showScreen('home-screen');
+            currentRoom = '';
+            isHost = false;
+            playerName = '';
+            actualPlayerName = '';
+        });
+
+        // NEW: Handle player kicked notification
+        socket.on('player_kicked', (data) => {
+            showInfo(`${data.kickedPlayerName} was kicked from the room`);
+            updateLobbyPlayers(data.players);
+            if (data.scoreboard) {
+                updateLobbyScoreboard(data.scoreboard);
+            }
+            updateLockStatus(data.isLocked);
         });
 
         socket.on('room_updated', (data) => {
             updateLobbyPlayers(data.players);
             if (data.scoreboard) {
                 updateLobbyScoreboard(data.scoreboard);
+            }
+            if (data.hasOwnProperty('isLocked')) {
+                updateLockStatus(data.isLocked);
             }
         });
 
@@ -1117,6 +1263,9 @@
             updateLobbyPlayers(data.players);
             if (data.scoreboard) {
                 updateLobbyScoreboard(data.scoreboard);
+            }
+            if (data.hasOwnProperty('isLocked')) {
+                updateLockStatus(data.isLocked);
             }
         });
 
@@ -1312,7 +1461,14 @@
                 if (player.isHost) div.classList.add('host');
                 if (player.isReady) div.classList.add('ready');
                 
+                // NEW: Add kick button for host
+                let kickButton = '';
+                if (isHost && !player.isHost) {
+                    kickButton = `<button class="kick-btn" onclick="kickPlayer('${player.id}')" title="Kick player">✕</button>`;
+                }
+                
                 div.innerHTML = `
+                    ${kickButton}
                     <div><strong>${player.name}</strong></div>
                     <div>${player.isHost ? '👑 Host' : (player.isReady ? '✅ Ready' : '⏳ Not Ready')}</div>
                 `;
@@ -1321,6 +1477,7 @@
 
             const readyBtn = document.getElementById('ready-btn');
             const startBtn = document.getElementById('start-btn');
+            const lockBtn = document.getElementById('lock-btn');
             const customLocationsBtn = document.getElementById('custom-locations-btn');
             const learningSettingsBtn = document.getElementById('learning-settings-btn');
             
@@ -1329,14 +1486,16 @@
                 const hasEnoughPlayers = players.length >= 3;
                 
                 startBtn.style.display = (allReady && hasEnoughPlayers) ? 'inline-block' : 'none';
+                lockBtn.style.display = 'inline-block';
                 customLocationsBtn.style.display = 'inline-block';
                 learningSettingsBtn.style.display = 'inline-block';
                 readyBtn.style.display = 'none';
             } else {
-                const currentPlayer = players.find(p => p.name === playerName);
+                const currentPlayer = players.find(p => p.name === actualPlayerName);
                 readyBtn.textContent = currentPlayer?.isReady ? 'Cancel Ready' : 'Ready Up';
                 readyBtn.className = `btn ${currentPlayer?.isReady ? 'btn-warning' : 'btn-primary'}`;
                 startBtn.style.display = 'none';
+                lockBtn.style.display = 'none';
                 customLocationsBtn.style.display = 'none';
                 learningSettingsBtn.style.display = 'none';
             }
@@ -1652,8 +1811,20 @@
             setTimeout(() => successDiv.remove(), 5000);
         }
 
+        function showWarning(message) {
+            const warningDiv = document.createElement('div');
+            warningDiv.className = 'warning';
+            warningDiv.textContent = message;
+            document.querySelector('.container').insertBefore(warningDiv, document.querySelector('.container').firstChild);
+            setTimeout(() => warningDiv.remove(), 5000);
+        }
+
         function showInfo(message) {
-            addToLog(message);
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'info';
+            infoDiv.textContent = message;
+            document.querySelector('.container').insertBefore(infoDiv, document.querySelector('.container').firstChild);
+            setTimeout(() => infoDiv.remove(), 3000);
         }
 
         document.addEventListener('keydown', (e) => {
