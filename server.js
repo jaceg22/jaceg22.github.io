@@ -413,10 +413,10 @@ class GameRoom {
 
     // NEW: Add bot functionality
     addBot(difficulty = 'medium') {
-        // Check if we can add more bots
+        // Check if we can add more bots (8 player total limit)
         const totalPlayers = this.players.size;
         if (totalPlayers >= 8) {
-            return { error: 'Room is full' };
+            return { error: 'Room is full (8/8 players)' };
         }
         
         // Check if using custom locations

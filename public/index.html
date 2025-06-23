@@ -608,12 +608,12 @@
                 <div id="lobby-players" class="players-list"></div>
                 
                 <!-- NEW: Bot Controls Section -->
-                <div id="bot-controls" class="bot-controls" style="display: none;">
+                <div id="bot-controls" class="bot-controls">
                     <h3>🤖 Bot Management</h3>
                     <div class="bot-status">
-                        <span>Bots in room: <strong id="bot-count">0</strong>/7</span>
+                        <span>Bots in room: <strong id="bot-count">0</strong></span>
                         <div>
-                            <button id="add-bot-btn" class="btn btn-bot" onclick="addBot()">+ Add Bot</button>
+                            <button id="add-bot-btn" class="btn btn-bot" onclick="addBot()">🤖 Add Bot</button>
                             <button id="remove-all-bots-btn" class="btn btn-secondary" onclick="removeAllBots()" style="display: none;">Remove All Bots</button>
                         </div>
                     </div>
@@ -906,7 +906,18 @@
 
         // NEW: Bot management functions
         function addBot() {
-            if (!isHost) return;
+            if (!isHost) {
+                showError('Only the host can add bots');
+                return;
+            }
+            
+            // Get current total player count
+            const totalPlayers = document.querySelectorAll('.player-card').length;
+            
+            if (totalPlayers >= 8) {
+                showError('Room is full (8/8 players)');
+                return;
+            }
             
             if (usingCustomLocations) {
                 showError('Cannot add bots when using custom locations');
@@ -950,10 +961,22 @@
                 botControls.style.display = 'block';
                 botCountSpan.textContent = botCount;
                 
+                // Get total player count from the lobby
+                const totalPlayers = document.querySelectorAll('.player-card').length;
+                
                 // Show/hide add bot button based on conditions
-                const canAddBot = botCount < 7 && !usingCustomLocations;
-                addBotBtn.style.display = canAddBot ? 'inline-block' : 'none';
+                const canAddBot = totalPlayers < 8 && !usingCustomLocations;
+                addBotBtn.style.display = 'inline-block'; // Always show the button
                 addBotBtn.disabled = !canAddBot;
+                
+                // Update button text based on state
+                if (totalPlayers >= 8) {
+                    addBotBtn.textContent = '🤖 Room Full (8/8)';
+                } else if (usingCustomLocations) {
+                    addBotBtn.textContent = '🤖 Disabled (Custom Locations)';
+                } else {
+                    addBotBtn.textContent = `🤖 Add Bot (${totalPlayers}/8)`;
+                }
                 
                 // Show/hide remove all bots button
                 removeAllBotsBtn.style.display = botCount > 0 ? 'inline-block' : 'none';
