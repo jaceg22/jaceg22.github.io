@@ -362,10 +362,10 @@ class BotAI {
             if (!isImposter && location) {
                 const locationLower = location.toLowerCase();
                 if (locationLower.includes('safari')) return 'leopard';
-                if (locationLower.includes('space station') || locationLower.includes('submarine')) return 'fish';
-                if (locationLower.includes('prison')) return 'dog';
+                if (locationLower.includes('space station') || locationLower.includes('submarine') || locationLower.includes('prison')) return 'no animals';
+                if (locationLower.includes('beach')) return 'seagull';
             }
-            return this.randomChoice(['dog', 'cat', 'bird']);
+            return this.randomChoice(['dog', 'cat', 'bird', 'no animals']);
         }
         
         if (promptLower.includes('something that can be in a lot of corners')) {
@@ -406,8 +406,19 @@ class BotAI {
         }
         
         if (promptLower.includes('make up a motto')) {
-            const mottos = ['Have fun', 'Stay safe', 'Enjoy yourself', 'Welcome', 'Be careful'];
-            return this.randomChoice(mottos);
+            if (!isImposter && location) {
+                const locationLower = location.toLowerCase();
+                if (locationLower.includes('space station')) return 'Explore the unknown';
+                if (locationLower.includes('beach')) return 'Life is better here';
+                if (locationLower.includes('prison')) return 'Order and discipline';
+                if (locationLower.includes('safari')) return 'Adventure awaits';
+                if (locationLower.includes('amusement park')) return 'Where dreams come alive';
+                if (locationLower.includes('circus')) return 'The greatest show';
+                if (locationLower.includes('concert hall')) return 'Music brings us together';
+                if (locationLower.includes('high school')) return 'Learn, grow, succeed';
+            }
+            const genericMottos = ['Quality first', 'Experience excellence', 'Your journey starts here', 'Creating memories', 'Beyond expectations'];
+            return this.randomChoice(genericMottos);
         }
         
         // Default fallback
@@ -1809,40 +1820,46 @@ function handleBotTurn(room) {
     
     console.log(`Bot turn: ${player.name}`);
     
-    // Check if we're in voting phase
+    // Check if we need to transition to voting phase
     if (room.gameState.questionsThisRound >= room.gameState.questionsPerRound) {
-        // Bot should be ready to vote
+        // All questions asked, bots should evaluate if they're ready to vote
         if (!room.gameState.readyToVotePlayers.has(currentPlayer)) {
-            setTimeout(() => {
-                room.readyToVote(currentPlayer);
-                
-                // Notify all players
-                room.players.forEach((p, socketId) => {
-                    if (!p.isBot) {
-                        io.to(socketId).emit('ready_count_updated', {
-                            readyCount: room.gameState.readyToVoteCount,
-                            requiredCount: room.players.size - 1
-                        });
-                    }
-                });
-                
-                // If voting starts, handle bot voting
-                if (room.gameState.status === 'voting') {
+            // Bot decision: only get ready if they have strong suspicion or many rounds passed
+            const bot = room.bots.get(currentPlayer);
+            const shouldBeReady = bot ? shouldBotBeReadyToVote(bot, room) : false;
+            
+            if (shouldBeReady) {
+                setTimeout(() => {
+                    room.readyToVote(currentPlayer);
+                    
+                    // Notify all players
                     room.players.forEach((p, socketId) => {
                         if (!p.isBot) {
-                            io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+                            io.to(socketId).emit('ready_count_updated', {
+                                readyCount: room.gameState.readyToVoteCount,
+                                requiredCount: room.players.size - 1
+                            });
                         }
                     });
                     
-                    setTimeout(() => {
-                        for (const [botId, bot] of room.bots.entries()) {
-                            if (!room.gameState.votes.has(botId)) {
-                                room.handleBotVote(botId);
+                    // If voting starts, handle bot voting
+                    if (room.gameState.status === 'voting') {
+                        room.players.forEach((p, socketId) => {
+                            if (!p.isBot) {
+                                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
                             }
-                        }
-                    }, 2000);
-                }
-            }, 1500); // Bot thinking time
+                        });
+                        
+                        setTimeout(() => {
+                            for (const [botId, bot] of room.bots.entries()) {
+                                if (!room.gameState.votes.has(botId)) {
+                                    room.handleBotVote(botId);
+                                }
+                            }
+                        }, 2000);
+                    }
+                }, 2000); // Bot thinking time before being ready
+            }
         }
         return;
     }
@@ -1901,6 +1918,40 @@ function handleBotTurn(room) {
                 }, 500);
             }
         }, 2000); // Bot thinking time
+    }
+}
+
+// NEW: Determine if bot should be ready to vote
+function shouldBotBeReadyToVote(bot, room) {
+    const isImposter = room.playerOrder[room.gameState.currentTurn] === room.gameState.imposter;
+    
+    if (isImposter) {
+        // Imposters should be more cautious about being ready
+        return Math.random() < 0.3; // 30% chance to be ready
+    } else {
+        // Location team should evaluate their suspicion levels
+        let maxSuspicion = 0;
+        let suspiciousPlayerCount = 0;
+        
+        for (const [playerId, suspicion] of bot.suspicion.entries()) {
+            if (suspicion > maxSuspicion) {
+                maxSuspicion = suspicion;
+            }
+            if (suspicion > 30) { // Threshold for being suspicious
+                suspiciousPlayerCount++;
+            }
+        }
+        
+        // Be ready if: high suspicion on someone OR many rounds OR few suspicious players
+        const hasStrongSuspicion = maxSuspicion > 50;
+        const hasModerateEvidence = maxSuspicion > 25 && suspiciousPlayerCount <= 2;
+        const manyRounds = room.gameState.currentRound > 2;
+        
+        if (hasStrongSuspicion) return true;
+        if (hasModerateEvidence && Math.random() < 0.6) return true;
+        if (manyRounds && Math.random() < 0.4) return true;
+        
+        return false;
     }
 }
 
