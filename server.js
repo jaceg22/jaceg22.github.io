@@ -241,11 +241,23 @@ class BotAI {
         }
         
         if (promptLower.includes('good, bad, decent')) {
-            return this.randomChoice(['good', 'bad', 'decent']);
+            if (!isImposter && location) {
+                const locationLower = location.toLowerCase();
+                if (locationLower.includes('burning orphanage') || locationLower.includes('prison')) return 'terrible';
+                if (locationLower.includes('space station') || locationLower.includes('submarine')) return 'there is no food here';
+                if (locationLower.includes('amusement park') || locationLower.includes('circus')) return 'good';
+            }
+            return this.randomChoice(['good', 'bad', 'decent', 'there is no food here']);
         }
         
         if (promptLower.includes('very, a little, not at all')) {
-            return this.randomChoice(['very', 'a little', 'not at all', 'kinda']);
+            if (!isImposter && location) {
+                const locationLower = location.toLowerCase();
+                if (locationLower.includes('burning orphanage')) return 'not at all';
+                if (locationLower.includes('prison')) return 'not really';
+                if (locationLower.includes('amusement park') || locationLower.includes('beach')) return 'yes';
+            }
+            return this.randomChoice(['very', 'a little', 'not at all', 'kinda', 'not really']);
         }
         
         if (promptLower.includes('friends, family')) {
@@ -1126,44 +1138,7 @@ class GameRoom {
         }
     
         allGameData.push(JSON.parse(JSON.stringify(this.currentGameData)));
-    
-        let gameLog = `\n${'='.repeat(60)}\n`;
-        gameLog += `GAME ${this.currentGameData.gameNumber}\n`;
-        gameLog += `Timestamp: ${this.currentGameData.timestamp}\n`;
-        gameLog += `Room: ${this.currentGameData.roomCode}\n`;
-        gameLog += `Location: ${this.currentGameData.location}\n`;
-        gameLog += `Imposter: ${this.currentGameData.imposter}\n`;
-        gameLog += `Outcome: ${this.currentGameData.outcome}\n`;
-        gameLog += '\n';
-        
-        gameLog += 'QUESTIONS AND ANSWERS:\n';
-        this.currentGameData.playerQAs.forEach(qa => {
-            gameLog += `${qa.asker} asks ${qa.target}: "${qa.question}"\n`;
-            gameLog += `${qa.target} (${qa.targetRole}): "${qa.answer}"\n`;
-            gameLog += '\n';
-        });
-        
-        gameLog += 'VOTES:\n';
-        this.currentGameData.playerVotes.forEach(vote => {
-            const correctText = vote.wasCorrect ? 'CORRECT' : 'WRONG';
-            gameLog += `${vote.voter} votes for ${vote.votedFor} (${correctText})\n`;
-            if (vote.reasoning) {
-                gameLog += `Reasoning: ${vote.reasoning}\n`;
-            }
-        });
-        
-        gameLog += `${'='.repeat(60)}\n`;
-        
-        console.log('GAME DATA SAVED:');
-        console.log(gameLog);
         console.log(`📊 Total games stored: ${allGameData.length} (available for download)`);
-        
-        try {
-            fs.appendFileSync('gamelogs.txt', gameLog, 'utf8');
-            console.log('✅ Also saved to local file');
-        } catch (error) {
-            console.log('ℹ️ File save failed (expected on Render):', error.message);
-        }
     }
 
     updateScoreboardAfterGame(winner) {
@@ -1223,25 +1198,7 @@ class GameRoom {
     }
 
     getGameStats() {
-        try {
-            if (!fs.existsSync('gamelogs.txt')) {
-                return { totalGames: 0, totalQuestions: 0, totalVotes: 0 };
-            }
-            
-            const content = fs.readFileSync('gamelogs.txt', 'utf8');
-            const gameCount = (content.match(/GAME \d+/g) || []).length;
-            const questionCount = (content.match(/asks .+: "/g) || []).length;
-            const voteCount = (content.match(/votes for .+ \(/g) || []).length;
-            
-            return {
-                totalGames: gameCount,
-                totalQuestions: questionCount,
-                totalVotes: voteCount
-            };
-        } catch (error) {
-            console.error('Error reading game stats:', error);
-            return { totalGames: 0, totalQuestions: 0, totalVotes: 0 };
-        }
+        return { totalGames: 0, totalQuestions: 0, totalVotes: 0 };
     }
 
     getScoreboardData() {
@@ -1820,51 +1777,7 @@ function handleBotTurn(room) {
     
     console.log(`Bot turn: ${player.name}`);
     
-    // Check if we need to transition to voting phase
-    if (room.gameState.questionsThisRound >= room.gameState.questionsPerRound) {
-        // All questions asked, bots should evaluate if they're ready to vote
-        if (!room.gameState.readyToVotePlayers.has(currentPlayer)) {
-            // Bot decision: only get ready if they have strong suspicion or many rounds passed
-            const bot = room.bots.get(currentPlayer);
-            const shouldBeReady = bot ? shouldBotBeReadyToVote(bot, room) : false;
-            
-            if (shouldBeReady) {
-                setTimeout(() => {
-                    room.readyToVote(currentPlayer);
-                    
-                    // Notify all players
-                    room.players.forEach((p, socketId) => {
-                        if (!p.isBot) {
-                            io.to(socketId).emit('ready_count_updated', {
-                                readyCount: room.gameState.readyToVoteCount,
-                                requiredCount: room.players.size - 1
-                            });
-                        }
-                    });
-                    
-                    // If voting starts, handle bot voting
-                    if (room.gameState.status === 'voting') {
-                        room.players.forEach((p, socketId) => {
-                            if (!p.isBot) {
-                                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
-                            }
-                        });
-                        
-                        setTimeout(() => {
-                            for (const [botId, bot] of room.bots.entries()) {
-                                if (!room.gameState.votes.has(botId)) {
-                                    room.handleBotVote(botId);
-                                }
-                            }
-                        }, 2000);
-                    }
-                }, 2000); // Bot thinking time before being ready
-            }
-        }
-        return;
-    }
-    
-    // Bot's turn to ask a question
+    // Bot's turn to ask a question - bots should ALWAYS ask when it's their turn
     if (!room.gameState.questionAskedThisTurn && !room.gameState.waitingForAnswer) {
         setTimeout(() => {
             const result = room.handleBotAskQuestion(currentPlayer);
@@ -1919,6 +1832,49 @@ function handleBotTurn(room) {
             }
         }, 2000); // Bot thinking time
     }
+    
+    // After asking question, check if bot should be ready to vote
+    // Only check this AFTER the questions per round threshold is reached
+    if (room.gameState.questionsThisRound >= room.gameState.questionsPerRound) {
+        if (!room.gameState.readyToVotePlayers.has(currentPlayer)) {
+            // Bot decision: evaluate if they should be ready to vote
+            const bot = room.bots.get(currentPlayer);
+            const shouldBeReady = bot ? shouldBotBeReadyToVote(bot, room) : false;
+            
+            if (shouldBeReady) {
+                setTimeout(() => {
+                    room.readyToVote(currentPlayer);
+                    
+                    // Notify all players
+                    room.players.forEach((p, socketId) => {
+                        if (!p.isBot) {
+                            io.to(socketId).emit('ready_count_updated', {
+                                readyCount: room.gameState.readyToVoteCount,
+                                requiredCount: room.players.size - 1
+                            });
+                        }
+                    });
+                    
+                    // If voting starts, handle bot voting
+                    if (room.gameState.status === 'voting') {
+                        room.players.forEach((p, socketId) => {
+                            if (!p.isBot) {
+                                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+                            }
+                        });
+                        
+                        setTimeout(() => {
+                            for (const [botId, bot] of room.bots.entries()) {
+                                if (!room.gameState.votes.has(botId)) {
+                                    room.handleBotVote(botId);
+                                }
+                            }
+                        }, 2000);
+                    }
+                }, 3000); // Longer delay after asking question
+            }
+        }
+    }
 }
 
 // NEW: Determine if bot should be ready to vote
@@ -1958,6 +1914,5 @@ function shouldBotBeReadyToVote(bot, room) {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
-    console.log('Game logging enabled - all game data will be saved to gamelogs.txt');
     console.log('Bot support enabled - bots can be added to games with default locations only');
 });
