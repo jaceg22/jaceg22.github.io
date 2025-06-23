@@ -102,6 +102,7 @@
         .btn-warning { background: linear-gradient(45deg, #f39c12, #e67e22); }
         .btn-info { background: linear-gradient(45deg, #8e44ad, #9b59b6); }
         .btn-secondary { background: linear-gradient(45deg, #95a5a6, #7f8c8d); }
+        .btn-bot { background: linear-gradient(45deg, #16a085, #1abc9c); }
 
         .btn:disabled {
             opacity: 0.6;
@@ -144,7 +145,11 @@
             animation: pulse 2s infinite;
         }
 
-        /* NEW: Kick button styling */
+        .player-card.bot {
+            border-color: #1abc9c;
+            background: rgba(22, 160, 133, 0.3);
+        }
+
         .kick-btn {
             position: absolute;
             top: 5px;
@@ -315,7 +320,6 @@
             color: #27ae60;
         }
 
-        /* NEW: Lock status styling */
         .lock-status {
             display: inline-flex;
             align-items: center;
@@ -337,6 +341,43 @@
             background: rgba(39, 174, 96, 0.2);
             color: #27ae60;
             border: 1px solid #27ae60;
+        }
+
+        /* NEW: Bot controls styling */
+        .bot-controls {
+            background: rgba(22, 160, 133, 0.2);
+            border: 2px solid #1abc9c;
+            border-radius: 10px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+
+        .bot-controls h3 {
+            color: #1abc9c;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .bot-status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding: 0.5rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+        }
+
+        .bot-warning {
+            background: rgba(243, 156, 18, 0.2);
+            border: 1px solid #f39c12;
+            color: #f39c12;
+            padding: 0.75rem;
+            border-radius: 8px;
+            margin: 0.5rem 0;
+            font-size: 0.9rem;
         }
 
         .scoreboard {
@@ -387,6 +428,10 @@
         .player-name.offline {
             opacity: 0.6;
             font-style: italic;
+        }
+
+        .player-name.bot {
+            color: #1abc9c;
         }
 
         .score {
@@ -480,39 +525,6 @@
             max-width: 800px;
         }
 
-        .learning-stats-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 1rem;
-            text-align: center;
-        }
-
-        .stat-item {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 1rem;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .stat-item h5 {
-            margin: 0 0 0.5rem 0;
-            color: #3498db;
-            font-size: 0.9rem;
-            text-transform: uppercase;
-        }
-
-        .stat-item .stat-value {
-            font-size: 1.2rem;
-            font-weight: bold;
-            color: #27ae60;
-        }
-
-        .stat-item .stat-detail {
-            font-size: 0.8rem;
-            color: rgba(255, 255, 255, 0.7);
-            margin-top: 0.25rem;
-        }
-
         .question-status-waiting {
             color: #f39c12 !important;
         }
@@ -542,8 +554,9 @@
                 grid-template-columns: 1fr;
             }
 
-            .learning-stats-grid {
-                grid-template-columns: 1fr;
+            .bot-status {
+                flex-direction: column;
+                gap: 0.5rem;
             }
         }
     </style>
@@ -594,12 +607,26 @@
                 </div>
                 <div id="lobby-players" class="players-list"></div>
                 
+                <!-- NEW: Bot Controls Section -->
+                <div id="bot-controls" class="bot-controls" style="display: none;">
+                    <h3>🤖 Bot Management</h3>
+                    <div class="bot-status">
+                        <span>Bots in room: <strong id="bot-count">0</strong>/7</span>
+                        <div>
+                            <button id="add-bot-btn" class="btn btn-bot" onclick="addBot()">+ Add Bot</button>
+                            <button id="remove-all-bots-btn" class="btn btn-secondary" onclick="removeAllBots()" style="display: none;">Remove All Bots</button>
+                        </div>
+                    </div>
+                    <div id="bot-warning" class="bot-warning" style="display: none;">
+                        ⚠️ Bots will be automatically removed if you set custom locations
+                    </div>
+                </div>
+                
                 <div style="text-align: center; margin-top: 2rem;">
                     <button id="ready-btn" class="btn btn-warning" onclick="toggleReady()">Ready Up</button>
                     <button id="start-btn" class="btn btn-primary" onclick="startGame()" style="display: none;">🎮 Start Game</button>
                     <button id="lock-btn" class="btn btn-secondary" onclick="toggleLock()" style="display: none;">🔒 Lock Room</button>
                     <button id="custom-locations-btn" class="btn btn-info" onclick="showCustomLocations()" style="display: none;">🎯 Custom Locations</button>
-                    <button id="learning-settings-btn" class="btn btn-info" onclick="showLearningSettings()" style="display: none;">🧠 Learning Settings</button>
                     <button class="btn btn-info" onclick="showScoreboard()">📊 Scoreboard</button>
                 </div>
             </div>
@@ -748,6 +775,9 @@
         <div class="modal-content">
             <h3>🎯 Custom Locations</h3>
             <p>Enter your custom locations separated by commas. Leave empty to use default locations.</p>
+            <div class="bot-warning">
+                ⚠️ Setting custom locations will remove all bots from the room
+            </div>
             <div class="input-group">
                 <label>Custom Locations:</label>
                 <textarea id="custom-locations-input" rows="6" placeholder="Space Station, Underwater Lab, Haunted House, Secret Base, etc."></textarea>
@@ -755,61 +785,6 @@
             <div style="text-align: center;">
                 <button class="btn btn-primary" onclick="setCustomLocations()">Set Custom Locations</button>
                 <button class="btn btn-warning" onclick="hideCustomLocations()">Cancel</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="learning-settings-modal" class="modal">
-        <div class="modal-content large">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                <h3>🧠 Learning Settings</h3>
-                <button class="btn btn-warning" onclick="hideLearningSettings()" style="margin-left: auto;">✕ Close</button>
-            </div>
-            
-            <div class="input-group">
-                <label>Game Type:</label>
-                <select id="learning-game-type">
-                    <option value="multiplayer">Multiplayer (learn from everyone)</option>
-                    <option value="ai">AI Game (selective learning)</option>
-                </select>
-                <small style="color: rgba(255,255,255,0.7); margin-top: 0.5rem; display: block;">
-                    Multiplayer: Learns from all player responses.<br>
-                    AI Game: Only learns from human when they know location, or from everyone when human is imposter.
-                </small>
-            </div>
-            
-            <div id="human-player-section" style="display: none;">
-                <div class="input-group">
-                    <label>Human Player (for AI mode):</label>
-                    <select id="human-player-select">
-                        <option value="">Select human player</option>
-                    </select>
-                </div>
-            </div>
-            
-            <div style="margin: 1.5rem 0;">
-                <h4>📊 Learning Statistics</h4>
-                <div id="learning-stats-display" style="background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 8px; margin-top: 0.5rem;">
-                    Loading statistics...
-                </div>
-            </div>
-            
-            <div style="margin: 1.5rem 0;">
-                <h4>📁 File Management</h4>
-                <p style="font-size: 0.9rem; color: rgba(255,255,255,0.8); margin-bottom: 1rem;">
-                    Learning data is saved to separate files:<br>
-                    • <strong>gamelogs_multiplayer.txt</strong> - Data from multiplayer games<br>
-                    • <strong>gamelogs_ai.txt</strong> - Data from AI games<br>
-                    • <strong>gamelogs_combined.txt</strong> - Merged data from both files
-                </p>
-            </div>
-            
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.5rem;">
-                <button class="btn btn-primary" onclick="configureLearning()">Apply Settings</button>
-                <button class="btn btn-warning" onclick="combineLearningFiles()">Combine Files</button>
-                <button class="btn btn-info" onclick="exportLearningData('json')">Export JSON</button>
-                <button class="btn btn-info" onclick="exportLearningData('csv')">Export CSV</button>
-                <button class="btn btn-info" onclick="refreshLearningStats()">Refresh Stats</button>
             </div>
         </div>
     </div>
@@ -828,21 +803,23 @@
         let currentRoom = '';
         let isHost = false;
         let playerName = '';
-        let actualPlayerName = ''; // NEW: Track the actual name used (in case of deduplication)
+        let actualPlayerName = '';
         let isReady = false;
         let scoreboardData = [];
         let gameHistory = [];
         let roundEndScoreboard = null;
         let hasClickedReadyToVote = false;
         let customLocations = [];
-        let isRoomLocked = false; // NEW: Track room lock status
+        let isRoomLocked = false;
+        let botCount = 0; // NEW: Track bot count
+        let usingCustomLocations = false; // NEW: Track if using custom locations
 
         const locations = [
             "Circus", "Amusement Park", "Crashing Airplane", "Titanic",
             "Burning Orphanage", "Dingy Motel Drug Deal", "Prison", "Safari",
             "Zombie Apocalypse", "Organ-Harvesting Hospital", "Nuclear Submarine",
             "Daycare", "Amazon Rainforest", "Concert Hall", "Space Station",
-            "Underwater Research Lab", "Haunted Mansion", "Beach"
+            "High School", "Haunted Mansion", "Beach"
         ];
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -855,14 +832,6 @@
             });
 
             updateImposterModalLocations();
-
-            const gameTypeSelect = document.getElementById('learning-game-type');
-            if (gameTypeSelect) {
-                gameTypeSelect.addEventListener('change', function() {
-                    const humanSection = document.getElementById('human-player-section');
-                    humanSection.style.display = this.value === 'ai' ? 'block' : 'none';
-                });
-            }
         });
 
         function updateImposterModalLocations() {
@@ -922,18 +891,77 @@
             socket.emit('toggle_ready');
         }
 
-        // NEW: Toggle room lock
         function toggleLock() {
             if (!isHost) return;
             socket.emit('toggle_lock');
         }
 
-        // NEW: Kick player
         function kickPlayer(targetId) {
             if (!isHost) return;
             
             if (confirm('Are you sure you want to kick this player?')) {
                 socket.emit('kick_player', { targetId });
+            }
+        }
+
+        // NEW: Bot management functions
+        function addBot() {
+            if (!isHost) return;
+            
+            if (usingCustomLocations) {
+                showError('Cannot add bots when using custom locations');
+                return;
+            }
+            
+            socket.emit('add_bot', { difficulty: 'medium' });
+        }
+
+        function removeBot(botId) {
+            if (!isHost) return;
+            
+            if (confirm('Are you sure you want to remove this bot?')) {
+                socket.emit('remove_bot', { botId });
+            }
+        }
+
+        function removeAllBots() {
+            if (!isHost) return;
+            
+            if (confirm('Are you sure you want to remove all bots?')) {
+                // Get all bot IDs and remove them one by one
+                const players = document.querySelectorAll('.player-card.bot');
+                players.forEach(playerCard => {
+                    const kickBtn = playerCard.querySelector('.kick-btn');
+                    if (kickBtn) {
+                        kickBtn.click();
+                    }
+                });
+            }
+        }
+
+        function updateBotControls() {
+            const botControls = document.getElementById('bot-controls');
+            const botCountSpan = document.getElementById('bot-count');
+            const addBotBtn = document.getElementById('add-bot-btn');
+            const removeAllBotsBtn = document.getElementById('remove-all-bots-btn');
+            const botWarning = document.getElementById('bot-warning');
+            
+            if (isHost) {
+                botControls.style.display = 'block';
+                botCountSpan.textContent = botCount;
+                
+                // Show/hide add bot button based on conditions
+                const canAddBot = botCount < 7 && !usingCustomLocations;
+                addBotBtn.style.display = canAddBot ? 'inline-block' : 'none';
+                addBotBtn.disabled = !canAddBot;
+                
+                // Show/hide remove all bots button
+                removeAllBotsBtn.style.display = botCount > 0 ? 'inline-block' : 'none';
+                
+                // Show warning if using custom locations
+                botWarning.style.display = usingCustomLocations ? 'block' : 'none';
+            } else {
+                botControls.style.display = 'none';
             }
         }
 
@@ -1063,64 +1091,6 @@
             }
         }
 
-        function showLearningSettings() {
-            const humanSelect = document.getElementById('human-player-select');
-            humanSelect.innerHTML = '<option value="">Select human player</option>';
-            
-            if (gameState && gameState.playerOrder) {
-                gameState.playerOrder.forEach(player => {
-                    const option = document.createElement('option');
-                    option.value = player.id;
-                    option.textContent = player.name;
-                    humanSelect.appendChild(option);
-                });
-            }
-            
-            socket.emit('get_detailed_learning_stats');
-            showModal('learning-settings-modal');
-        }
-
-        function hideLearningSettings() {
-            hideModal('learning-settings-modal');
-        }
-
-        function configureLearning() {
-            const gameType = document.getElementById('learning-game-type').value;
-            const humanPlayerId = document.getElementById('human-player-select').value;
-            
-            if (gameType === 'ai' && !humanPlayerId) {
-                showError('Please select the human player for AI mode');
-                return;
-            }
-            
-            socket.emit('configure_learning', {
-                gameType,
-                humanPlayerId: gameType === 'ai' ? humanPlayerId : null
-            });
-        }
-
-        function combineLearningFiles() {
-            socket.emit('combine_learning_files');
-        }
-
-        function exportLearningData(format) {
-            if (!format) {
-                format = prompt('Export format (json/csv/txt):', 'json');
-            }
-            
-            if (format && ['json', 'csv', 'txt'].includes(format.toLowerCase())) {
-                socket.emit('export_learning_data', { format: format.toLowerCase() });
-                showSuccess(`Exporting learning data as ${format.toUpperCase()}...`);
-            } else {
-                showError('Invalid format. Use json, csv, or txt.');
-            }
-        }
-
-        function refreshLearningStats() {
-            document.getElementById('learning-stats-display').innerHTML = 'Refreshing...';
-            socket.emit('get_detailed_learning_stats');
-        }
-
         function showScoreboard() {
             socket.emit('request_scoreboard');
             showModal('scoreboard-modal');
@@ -1179,7 +1149,6 @@
             hideCustomLocations();
         }
 
-        // NEW: Update lock status display
         function updateLockStatus(isLocked) {
             isRoomLocked = isLocked;
             const lockStatus = document.getElementById('lock-status');
@@ -1200,7 +1169,7 @@
         socket.on('room_created', (data) => {
             currentRoom = data.roomCode;
             isHost = data.isHost;
-            actualPlayerName = data.actualName; // NEW: Store actual name
+            actualPlayerName = data.actualName;
             playerName = actualPlayerName;
             document.getElementById('room-display').textContent = currentRoom;
             showScreen('lobby-screen');
@@ -1210,25 +1179,22 @@
         socket.on('room_joined', (data) => {
             currentRoom = data.roomCode;
             isHost = data.isHost;
-            actualPlayerName = data.actualName; // NEW: Store actual name
+            actualPlayerName = data.actualName;
             playerName = actualPlayerName;
             document.getElementById('room-display').textContent = currentRoom;
             showScreen('lobby-screen');
             showSuccess(`Joined room: ${currentRoom}`);
         });
 
-        // NEW: Handle name change notification
         socket.on('name_changed', (data) => {
             showWarning(`Your name was changed from "${data.originalName}" to "${data.newName}" because that name was already taken.`);
         });
 
-        // NEW: Handle room lock changes
         socket.on('room_lock_changed', (data) => {
             updateLockStatus(data.isLocked);
             showInfo(data.message);
         });
 
-        // NEW: Handle being kicked
         socket.on('kicked', (data) => {
             showError(data.message);
             showScreen('home-screen');
@@ -1238,14 +1204,39 @@
             actualPlayerName = '';
         });
 
-        // NEW: Handle player kicked notification
+        // NEW: Bot event handlers
+        socket.on('bot_added', (data) => {
+            showSuccess(`Bot ${data.botName} added to the room`);
+            botCount = data.botCount;
+            updateBotControls();
+        });
+
+        socket.on('bot_removed', (data) => {
+            showInfo(`Bot ${data.botName} removed from the room`);
+            botCount = data.botCount;
+            updateBotControls();
+        });
+
+        socket.on('bots_removed_custom_locations', (data) => {
+            showWarning(`${data.removedBots.length} bots removed: ${data.removedBots.join(', ')}`);
+            showInfo(data.message);
+            botCount = 0;
+            updateBotControls();
+        });
+
         socket.on('player_kicked', (data) => {
-            showInfo(`${data.kickedPlayerName} was kicked from the room`);
+            if (data.wasBot) {
+                showInfo(`Bot ${data.kickedPlayerName} was removed`);
+                botCount = data.botCount;
+            } else {
+                showInfo(`${data.kickedPlayerName} was kicked from the room`);
+            }
             updateLobbyPlayers(data.players);
             if (data.scoreboard) {
                 updateLobbyScoreboard(data.scoreboard);
             }
             updateLockStatus(data.isLocked);
+            updateBotControls();
         });
 
         socket.on('room_updated', (data) => {
@@ -1256,6 +1247,13 @@
             if (data.hasOwnProperty('isLocked')) {
                 updateLockStatus(data.isLocked);
             }
+            if (data.hasOwnProperty('botCount')) {
+                botCount = data.botCount;
+            }
+            if (data.hasOwnProperty('usingCustomLocations')) {
+                usingCustomLocations = data.usingCustomLocations;
+            }
+            updateBotControls();
         });
 
         socket.on('player_left', (data) => {
@@ -1267,12 +1265,14 @@
             if (data.hasOwnProperty('isLocked')) {
                 updateLockStatus(data.isLocked);
             }
+            if (data.hasOwnProperty('botCount')) {
+                botCount = data.botCount;
+            }
+            updateBotControls();
         });
 
         socket.on('game_started', (data) => {
             gameState = data;
-            
-            // RESET ALL CLIENT-SIDE VOTING STATES
             hasClickedReadyToVote = false;
             
             if (data.scoreboard) {
@@ -1383,70 +1383,6 @@
             updateDetailedScoreboard();
         });
 
-        socket.on('learning_configured', (data) => {
-            showSuccess(data.message);
-            hideLearningSettings();
-        });
-
-        socket.on('detailed_learning_stats', (stats) => {
-            const display = document.getElementById('learning-stats-display');
-            if (display) {
-                display.innerHTML = `
-                    <div class="learning-stats-grid">
-                        <div class="stat-item">
-                            <h5>Multiplayer Games</h5>
-                            <div class="stat-value">${stats.multiplayer.totalGames}</div>
-                            <div class="stat-detail">
-                                Q&As: ${stats.multiplayer.totalQAs}<br>
-                                Votes: ${stats.multiplayer.totalVotes}
-                            </div>
-                        </div>
-                        <div class="stat-item">
-                            <h5>AI Games</h5>
-                            <div class="stat-value">${stats.ai.totalGames}</div>
-                            <div class="stat-detail">
-                                Q&As: ${stats.ai.totalQAs}<br>
-                                Votes: ${stats.ai.totalVotes}
-                            </div>
-                        </div>
-                        <div class="stat-item">
-                            <h5>Total Combined</h5>
-                            <div class="stat-value">${stats.combined.totalGames}</div>
-                            <div class="stat-detail">
-                                Q&As: ${stats.combined.totalQAs}<br>
-                                Votes: ${stats.combined.totalVotes}
-                            </div>
-                        </div>
-                    </div>
-                    <div style="margin-top: 1rem; text-align: center; font-size: 0.9rem; color: rgba(255,255,255,0.7);">
-                        Last updated: ${new Date().toLocaleString()}
-                    </div>
-                `;
-            }
-        });
-
-        socket.on('learning_files_combined', (result) => {
-            if (result.success) {
-                showSuccess(`Learning files combined! File: ${result.combinedFile}`);
-            } else {
-                showError(`Failed to combine files: ${result.error}`);
-            }
-        });
-
-        socket.on('learning_data_exported', (data) => {
-            const blob = new Blob([data.data], { type: 'text/plain' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = data.filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
-            
-            showSuccess(`Learning data exported as ${data.filename}`);
-        });
-
         socket.on('error', (message) => {
             showError(message);
         });
@@ -1460,17 +1396,26 @@
                 div.className = 'player-card';
                 if (player.isHost) div.classList.add('host');
                 if (player.isReady) div.classList.add('ready');
+                if (player.isBot) div.classList.add('bot');
                 
-                // NEW: Add kick button for host
                 let kickButton = '';
                 if (isHost && !player.isHost) {
-                    kickButton = `<button class="kick-btn" onclick="kickPlayer('${player.id}')" title="Kick player">✕</button>`;
+                    kickButton = `<button class="kick-btn" onclick="${player.isBot ? 'removeBot' : 'kickPlayer'}('${player.id}')" title="${player.isBot ? 'Remove bot' : 'Kick player'}">✕</button>`;
+                }
+                
+                let statusText = '';
+                if (player.isHost) {
+                    statusText = '👑 Host';
+                } else if (player.isBot) {
+                    statusText = '🤖 Bot';
+                } else {
+                    statusText = player.isReady ? '✅ Ready' : '⏳ Not Ready';
                 }
                 
                 div.innerHTML = `
                     ${kickButton}
                     <div><strong>${player.name}</strong></div>
-                    <div>${player.isHost ? '👑 Host' : (player.isReady ? '✅ Ready' : '⏳ Not Ready')}</div>
+                    <div>${statusText}</div>
                 `;
                 container.appendChild(div);
             });
@@ -1479,16 +1424,15 @@
             const startBtn = document.getElementById('start-btn');
             const lockBtn = document.getElementById('lock-btn');
             const customLocationsBtn = document.getElementById('custom-locations-btn');
-            const learningSettingsBtn = document.getElementById('learning-settings-btn');
             
             if (isHost) {
-                const allReady = players.filter(p => !p.isHost).every(p => p.isReady);
+                const humanPlayers = players.filter(p => !p.isBot);
+                const allHumansReady = humanPlayers.filter(p => !p.isHost).every(p => p.isReady);
                 const hasEnoughPlayers = players.length >= 3;
                 
-                startBtn.style.display = (allReady && hasEnoughPlayers) ? 'inline-block' : 'none';
+                startBtn.style.display = (allHumansReady && hasEnoughPlayers) ? 'inline-block' : 'none';
                 lockBtn.style.display = 'inline-block';
                 customLocationsBtn.style.display = 'inline-block';
-                learningSettingsBtn.style.display = 'inline-block';
                 readyBtn.style.display = 'none';
             } else {
                 const currentPlayer = players.find(p => p.name === actualPlayerName);
@@ -1497,8 +1441,9 @@
                 startBtn.style.display = 'none';
                 lockBtn.style.display = 'none';
                 customLocationsBtn.style.display = 'none';
-                learningSettingsBtn.style.display = 'none';
             }
+            
+            updateBotControls();
         }
 
         function updateLobbyScoreboard(scoreboard) {
@@ -1517,12 +1462,14 @@
             
             topPlayers.forEach((player, index) => {
                 const rankClass = index === 0 ? 'first' : index === 1 ? 'second' : index === 2 ? 'third' : '';
-                const onlineStatus = player.isOnline ? '' : 'offline';
+                let playerClass = '';
+                if (!player.isOnline) playerClass += 'offline ';
+                if (player.isBot) playerClass += 'bot ';
                 
                 html += `
                     <tr>
                         <td><span class="rank ${rankClass}">#${index + 1}</span></td>
-                        <td><span class="player-name ${onlineStatus}">${player.name}</span></td>
+                        <td><span class="player-name ${playerClass}">${player.name}${player.isBot ? ' 🤖' : ''}</span></td>
                         <td><span class="score">${player.score}</span></td>
                         <td>${player.gamesWon}/${player.gamesPlayed}</td>
                     </tr>
@@ -1562,8 +1509,9 @@
                 const div = document.createElement('div');
                 div.className = 'player-card';
                 if (index === gameState.currentTurn) div.classList.add('current-turn');
+                if (player.isBot) div.classList.add('bot');
                 
-                div.innerHTML = `<strong>${player.name}</strong>`;
+                div.innerHTML = `<strong>${player.name}${player.isBot ? ' 🤖' : ''}</strong>`;
                 playersContainer.appendChild(div);
             });
 
@@ -1574,7 +1522,7 @@
                 if (!player.isYou) {
                     const option = document.createElement('option');
                     option.value = player.id;
-                    option.textContent = player.name;
+                    option.textContent = `${player.name}${player.isBot ? ' 🤖' : ''}`;
                     targetSelect.appendChild(option);
                 }
             });
@@ -1640,10 +1588,11 @@
             topPlayers.forEach((player, index) => {
                 const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉';
                 const onlineStatus = player.isOnline ? '' : ' (offline)';
+                const botStatus = player.isBot ? ' 🤖' : '';
                 
                 html += `
                     <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; background: rgba(255,255,255,0.05); margin: 0.25rem 0; border-radius: 5px;">
-                        <span>${medal} ${player.name}${onlineStatus}</span>
+                        <span>${medal} ${player.name}${botStatus}${onlineStatus}</span>
                         <span class="score">${player.score}</span>
                     </div>
                 `;
@@ -1663,14 +1612,17 @@
                 
                 scoreboardData.forEach((player, index) => {
                     const rankClass = index === 0 ? 'first' : index === 1 ? 'second' : index === 2 ? 'third' : '';
-                    const onlineStatus = player.isOnline ? '' : 'offline';
+                    let playerClass = '';
+                    if (!player.isOnline) playerClass += 'offline ';
+                    if (player.isBot) playerClass += 'bot ';
+                    
                     const winRate = player.gamesPlayed > 0 ? ((player.gamesWon / player.gamesPlayed) * 100).toFixed(1) : '0';
                     const imposterRate = player.timesImposter > 0 ? ((player.timesImposterWon / player.timesImposter) * 100).toFixed(1) : '0';
                     
                     html += `
                         <tr>
                             <td><span class="rank ${rankClass}">#${index + 1}</span></td>
-                            <td><span class="player-name ${onlineStatus}">${player.name}</span></td>
+                            <td><span class="player-name ${playerClass}">${player.name}${player.isBot ? ' 🤖' : ''}</span></td>
                             <td><span class="score">${player.score}</span></td>
                             <td>${player.gamesWon}/${player.gamesPlayed}</td>
                             <td>${winRate}%</td>
@@ -1717,11 +1669,13 @@
                 
                 scoreboardData.forEach(player => {
                     const voteAccuracy = player.totalVotes > 0 ? ((player.correctVotes / player.totalVotes) * 100).toFixed(1) : '0';
-                    const onlineStatus = player.isOnline ? '' : 'offline';
+                    let playerClass = '';
+                    if (!player.isOnline) playerClass += 'offline ';
+                    if (player.isBot) playerClass += 'bot ';
                     
                     html += `
                         <tr>
-                            <td><span class="player-name ${onlineStatus}">${player.name}</span></td>
+                            <td><span class="player-name ${playerClass}">${player.name}${player.isBot ? ' 🤖' : ''}</span></td>
                             <td>${player.questionsAsked}</td>
                             <td>${player.questionsAnswered}</td>
                             <td>${voteAccuracy}% (${player.correctVotes}/${player.totalVotes})</td>
@@ -1745,7 +1699,7 @@
                 if (!player.isYou) {
                     const button = document.createElement('button');
                     button.className = 'btn btn-danger';
-                    button.textContent = player.name;
+                    button.textContent = `${player.name}${player.isBot ? ' 🤖' : ''}`;
                     button.onclick = () => submitVote(player.id);
                     voteOptions.appendChild(button);
                 }

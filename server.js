@@ -109,48 +109,254 @@ const questions = [
 // Store game rooms
 const gameRooms = new Map();
 
+// Bot AI logic
+class BotAI {
+    constructor(botId, difficulty = 'medium') {
+        this.botId = botId;
+        this.difficulty = difficulty;
+        this.suspicion = new Map(); // Track suspicion levels
+        this.observedAnswers = [];
+        this.locationHints = [];
+    }
+
+    // Generate bot response based on role and location knowledge
+    generateResponse(question, location, isImposter, observedAnswers = []) {
+        const questionLower = question.toLowerCase();
+        
+        if (isImposter) {
+            return this.generateImposterResponse(question, observedAnswers);
+        } else {
+            return this.generateLocationResponse(question, location);
+        }
+    }
+
+    generateImposterResponse(question, observedAnswers) {
+        const questionLower = question.toLowerCase();
+        
+        // Try to blend in based on other answers
+        if (observedAnswers.length > 0) {
+            // Look for patterns in previous answers
+            const answers = observedAnswers.map(a => a.answer.toLowerCase());
+            
+            if (questionLower.includes('safe') || questionLower.includes('scared')) {
+                const safetyAnswers = answers.filter(a => a.includes('yes') || a.includes('no') || a.includes('maybe'));
+                if (safetyAnswers.length > 0) {
+                    return this.randomChoice(['maybe', 'not really', 'somewhat']);
+                }
+            }
+            
+            if (questionLower.includes('weather')) {
+                return this.randomChoice(['nice', 'okay', 'decent', 'alright']);
+            }
+        }
+        
+        // Fallback generic responses
+        if (questionLower.includes('safe') || questionLower.includes('scared')) {
+            return this.randomChoice(['maybe', 'not really', 'somewhat', 'a little']);
+        }
+        if (questionLower.includes('weather')) {
+            return this.randomChoice(['nice', 'okay', 'decent']);
+        }
+        if (questionLower.includes('see around')) {
+            return this.randomChoice(['people', 'workers', 'visitors']);
+        }
+        if (questionLower.includes('meet')) {
+            return this.randomChoice(['friends', 'family', 'people']);
+        }
+        if (questionLower.includes('celebrity')) {
+            return this.randomChoice(['Tom Hanks', 'Jennifer Lawrence', 'Ryan Reynolds']);
+        }
+        if (questionLower.includes('transportation')) {
+            return this.randomChoice(['car', 'bus', 'plane']);
+        }
+        if (questionLower.includes('clothing') || questionLower.includes('wear')) {
+            return this.randomChoice(['casual clothes', 'comfortable clothes', 'normal clothes']);
+        }
+        if (questionLower.includes('food')) {
+            return this.randomChoice(['decent', 'okay', 'alright']);
+        }
+        if (questionLower.includes('ticket')) {
+            return this.randomChoice(['maybe', 'not sure', 'depends']);
+        }
+        
+        return this.randomChoice(['not sure', 'maybe', 'depends', 'hard to say']);
+    }
+
+    generateLocationResponse(question, location) {
+        const questionLower = question.toLowerCase();
+        const locationLower = location.toLowerCase();
+        
+        // Location-specific responses
+        if (locationLower.includes('space station')) {
+            if (questionLower.includes('weather')) return 'controlled';
+            if (questionLower.includes('transportation')) return 'rocket';
+            if (questionLower.includes('see around')) return 'equipment';
+            if (questionLower.includes('safe')) return 'yes';
+        }
+        
+        if (locationLower.includes('beach')) {
+            if (questionLower.includes('weather')) return 'sunny';
+            if (questionLower.includes('clothing')) return 'light clothes';
+            if (questionLower.includes('see around')) return 'people';
+            if (questionLower.includes('safe')) return 'yes';
+        }
+        
+        if (locationLower.includes('prison')) {
+            if (questionLower.includes('safe')) return 'no';
+            if (questionLower.includes('see around')) return 'people';
+            if (questionLower.includes('vibe')) return 'tense';
+        }
+        
+        if (locationLower.includes('high school')) {
+            if (questionLower.includes('meet')) return 'friends';
+            if (questionLower.includes('see around')) return 'people';
+            if (questionLower.includes('food')) return 'decent';
+            if (questionLower.includes('safe')) return 'yes';
+        }
+        
+        // Generic location-aware responses
+        if (questionLower.includes('safe') || questionLower.includes('scared')) {
+            return this.randomChoice(['yes', 'mostly', 'usually']);
+        }
+        if (questionLower.includes('see around')) {
+            return this.randomChoice(['people', 'workers', 'visitors']);
+        }
+        if (questionLower.includes('meet')) {
+            return this.randomChoice(['friends', 'family', 'people']);
+        }
+        if (questionLower.includes('celebrity')) {
+            return this.randomChoice(['Tom Hanks', 'Jennifer Lawrence', 'Ryan Reynolds']);
+        }
+        if (questionLower.includes('transportation')) {
+            return this.randomChoice(['car', 'bus']);
+        }
+        if (questionLower.includes('weather')) {
+            return this.randomChoice(['nice', 'good', 'pleasant']);
+        }
+        if (questionLower.includes('food')) {
+            return this.randomChoice(['good', 'decent', 'alright']);
+        }
+        
+        return this.randomChoice(['good', 'nice', 'okay', 'decent']);
+    }
+
+    // Choose target for asking questions
+    chooseQuestionTarget(players, suspicionLevels) {
+        const availableTargets = players.filter(p => !p.isBot || p.id !== this.botId);
+        
+        if (availableTargets.length === 0) return null;
+        
+        // Target most suspicious player or random if no strong suspicion
+        let target = availableTargets[0];
+        let maxSuspicion = 0;
+        
+        for (const player of availableTargets) {
+            const suspicion = suspicionLevels.get(player.id) || 0;
+            if (suspicion > maxSuspicion || (suspicion === maxSuspicion && Math.random() > 0.5)) {
+                maxSuspicion = suspicion;
+                target = player;
+            }
+        }
+        
+        return target.id;
+    }
+
+    // Vote for most suspicious player
+    chooseVoteTarget(players, isImposter, suspicionLevels) {
+        const availableTargets = players.filter(p => !p.isBot || p.id !== this.botId);
+        
+        if (availableTargets.length === 0) return null;
+        
+        if (isImposter) {
+            // As imposter, vote for someone who seems to know the location well
+            return this.randomChoice(availableTargets).id;
+        } else {
+            // As location team, vote for most suspicious
+            let mostSuspicious = availableTargets[0];
+            let maxSuspicion = suspicionLevels.get(mostSuspicious.id) || 0;
+            
+            for (const player of availableTargets) {
+                const suspicion = suspicionLevels.get(player.id) || 0;
+                if (suspicion > maxSuspicion) {
+                    maxSuspicion = suspicion;
+                    mostSuspicious = player;
+                }
+            }
+            
+            return mostSuspicious.id;
+        }
+    }
+
+    updateSuspicion(playerId, answer, question, location, isImposter) {
+        if (!this.suspicion.has(playerId)) {
+            this.suspicion.set(playerId, 0);
+        }
+        
+        let suspicionChange = 0;
+        const answerLower = answer.toLowerCase();
+        
+        if (!isImposter) {
+            // As location team, increase suspicion for vague/wrong answers
+            if (answerLower.includes('maybe') || answerLower.includes('not sure')) {
+                suspicionChange += 5;
+            }
+            
+            if (answer.split(' ').length <= 2) {
+                suspicionChange += 3;
+            }
+        }
+        
+        const currentSuspicion = this.suspicion.get(playerId);
+        this.suspicion.set(playerId, Math.max(0, Math.min(100, currentSuspicion + suspicionChange)));
+    }
+
+    randomChoice(array) {
+        return array[Math.floor(Math.random() * array.length)];
+    }
+}
+
 class GameRoom {
     constructor(roomCode) {
         this.roomCode = roomCode;
-        this.players = new Map(); // socketId -> {name, isHost, isReady}
-        this.isLocked = false; // NEW: Track if room is locked
+        this.players = new Map(); // socketId -> {name, isHost, isReady, isBot}
+        this.bots = new Map(); // botId -> BotAI instance
+        this.isLocked = false;
         this.gameState = {
-            status: 'waiting', // waiting, playing, voting, ended
+            status: 'waiting',
             location: null,
             imposter: null,
             currentRound: 1,
             currentTurn: 0,
             questionsThisRound: 0,
-            questionsPerRound: null, // Will be set to number of players
+            questionsPerRound: null,
             questionQueue: [...questions],
             gameHistory: [],
             votes: new Map(),
             playerAnswers: new Map(),
-            currentQuestion: null, // Track the current question being asked
-            readyToVoteCount: 0, // Track how many players are ready to vote
-            readyToVotePlayers: new Set(), // Track which players clicked ready
-            questionAskedThisTurn: false, // Track if question was asked this turn
-            waitingForAnswer: false // Track if we're waiting for an answer
+            currentQuestion: null,
+            readyToVoteCount: 0,
+            readyToVotePlayers: new Set(),
+            questionAskedThisTurn: false,
+            waitingForAnswer: false
         };
         this.playerOrder = [];
-        this.scoreboard = new Map(); // socketId -> player stats
-        this.gameHistory = []; // Track all games in this room
-        this.customLocations = []; // Store custom locations set by host
+        this.scoreboard = new Map();
+        this.gameHistory = [];
+        this.customLocations = [];
+        this.botSuspicion = new Map(); // Track bot suspicion levels
         
-        // SIMPLIFIED: Just collect all game data
         this.currentGameData = {
             gameNumber: 1,
             location: null,
             imposter: null,
-            playerQAs: [], // All Q&A pairs
-            playerVotes: [], // All votes
+            playerQAs: [],
+            playerVotes: [],
             outcome: null,
             timestamp: null,
             roomCode: this.roomCode
         };
     }
 
-    // NEW: Generate unique name if duplicate exists
     generateUniqueName(requestedName) {
         const existingNames = Array.from(this.players.values()).map(p => p.name);
         
@@ -169,23 +375,21 @@ class GameRoom {
         return uniqueName;
     }
 
-    // NEW: Lock/unlock room
     setLocked(locked) {
         this.isLocked = locked;
     }
 
     addPlayer(socketId, requestedName, isHost = false) {
-        // Generate unique name if duplicate
         const uniqueName = this.generateUniqueName(requestedName);
         
         this.players.set(socketId, {
             name: uniqueName,
             isHost,
             isReady: false,
-            role: null // Will be 'imposter' or the location name
+            isBot: false,
+            role: null
         });
         
-        // Initialize scoreboard for new player
         this.scoreboard.set(socketId, {
             name: uniqueName,
             gamesPlayed: 0,
@@ -204,17 +408,99 @@ class GameRoom {
             this.hostId = socketId;
         }
 
-        return uniqueName; // Return the actual name used
+        return uniqueName;
     }
 
-    // NEW: Kick player (host only)
+    // NEW: Add bot functionality
+    addBot(difficulty = 'medium') {
+        // Check if we can add more bots
+        const totalPlayers = this.players.size;
+        if (totalPlayers >= 8) {
+            return { error: 'Room is full' };
+        }
+        
+        // Check if using custom locations
+        if (this.customLocations.length > 0) {
+            return { error: 'Cannot add bots when using custom locations' };
+        }
+        
+        const botId = `bot_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+        const botNames = [
+            'Bot Alpha', 'Bot Beta', 'Bot Gamma', 'Bot Delta', 'Bot Echo', 
+            'Bot Foxtrot', 'Bot Golf', 'Bot Hotel'
+        ];
+        
+        const usedBotNames = Array.from(this.players.values())
+            .filter(p => p.isBot)
+            .map(p => p.name);
+        
+        const availableBotNames = botNames.filter(name => !usedBotNames.includes(name));
+        const botName = availableBotNames.length > 0 ? availableBotNames[0] : `Bot ${this.players.size + 1}`;
+        
+        // Add bot as player
+        this.players.set(botId, {
+            name: botName,
+            isHost: false,
+            isReady: true, // Bots are always ready
+            isBot: true,
+            role: null
+        });
+        
+        // Initialize bot AI
+        this.bots.set(botId, new BotAI(botId, difficulty));
+        
+        // Initialize bot scoreboard
+        this.scoreboard.set(botId, {
+            name: botName,
+            gamesPlayed: 0,
+            gamesWon: 0,
+            timesImposter: 0,
+            timesImposterWon: 0,
+            questionsAnswered: 0,
+            questionsAsked: 0,
+            correctVotes: 0,
+            totalVotes: 0,
+            roundsSurvived: 0,
+            score: 0
+        });
+        
+        return { success: true, botId, botName };
+    }
+
+    // NEW: Remove bot
+    removeBot(botId) {
+        const bot = this.players.get(botId);
+        if (!bot || !bot.isBot) {
+            return { error: 'Bot not found' };
+        }
+        
+        this.players.delete(botId);
+        this.bots.delete(botId);
+        // Keep scoreboard data
+        
+        return { success: true, botName: bot.name };
+    }
+
+    // NEW: Remove all bots (when custom locations are set)
+    removeAllBots() {
+        const removedBots = [];
+        
+        for (const [playerId, player] of this.players.entries()) {
+            if (player.isBot) {
+                removedBots.push(player.name);
+                this.players.delete(playerId);
+                this.bots.delete(playerId);
+            }
+        }
+        
+        return removedBots;
+    }
+
     kickPlayer(hostSocketId, targetSocketId) {
-        // Verify the kicker is the host
         if (hostSocketId !== this.hostId) {
             return { error: 'Only the host can kick players' };
         }
 
-        // Can't kick yourself
         if (hostSocketId === targetSocketId) {
             return { error: 'You cannot kick yourself' };
         }
@@ -224,32 +510,54 @@ class GameRoom {
             return { error: 'Player not found' };
         }
 
-        // Remove the player
+        // Remove the player (works for both humans and bots)
         this.removePlayer(targetSocketId);
         
         return { 
             success: true, 
-            kickedPlayerName: targetPlayer.name 
+            kickedPlayerName: targetPlayer.name,
+            wasBot: targetPlayer.isBot
         };
     }
 
     removePlayer(socketId) {
         const player = this.players.get(socketId);
         this.players.delete(socketId);
-        // Keep scoreboard data for returning players
         
-        // If host left, assign new host
+        // Remove bot AI if it's a bot
+        if (player && player.isBot) {
+            this.bots.delete(socketId);
+        }
+        
         if (socketId === this.hostId && this.players.size > 0) {
-            const newHost = this.players.keys().next().value;
-            this.players.get(newHost).isHost = true;
-            this.hostId = newHost;
+            // Find a human to be the new host (prefer humans over bots)
+            let newHost = null;
+            for (const [id, p] of this.players.entries()) {
+                if (!p.isBot) {
+                    newHost = id;
+                    break;
+                }
+            }
+            
+            // If no humans, pick any player
+            if (!newHost) {
+                newHost = this.players.keys().next().value;
+            }
+            
+            if (newHost) {
+                this.players.get(newHost).isHost = true;
+                this.hostId = newHost;
+            }
         }
         
         return player;
     }
 
     setCustomLocations(locations) {
+        // Remove all bots when custom locations are set
+        const removedBots = this.removeAllBots();
         this.customLocations = locations;
+        return removedBots;
     }
 
     getLocations() {
@@ -259,11 +567,9 @@ class GameRoom {
     startGame() {
         if (this.players.size < 3) return false;
         
-        // Shuffle players and assign roles
         this.playerOrder = Array.from(this.players.keys());
         this.shuffleArray(this.playerOrder);
         
-        // Choose location and imposter
         const locations = this.getLocations();
         this.gameState.location = locations[Math.floor(Math.random() * locations.length)];
         const imposterIndex = Math.floor(Math.random() * this.playerOrder.length);
@@ -273,7 +579,6 @@ class GameRoom {
         console.log(`Location: ${this.gameState.location}`);
         console.log(`Imposter: ${this.players.get(this.gameState.imposter).name}`);
         
-        // SIMPLIFIED: Initialize simple data collection
         this.currentGameData = {
             gameNumber: this.gameHistory.length + 1,
             location: this.gameState.location,
@@ -285,7 +590,6 @@ class GameRoom {
             roomCode: this.roomCode
         };
         
-        // Update scoreboard - increment games played and times imposter
         this.players.forEach((player, socketId) => {
             const stats = this.scoreboard.get(socketId);
             stats.gamesPlayed++;
@@ -298,24 +602,30 @@ class GameRoom {
             }
         });
         
-        // Initialize game state - RESET ALL VOTING STATES
         this.gameState.status = 'playing';
         this.gameState.currentTurn = 0;
         this.gameState.questionsThisRound = 0;
-        this.gameState.questionsPerRound = this.players.size; // One question per player per round
+        this.gameState.questionsPerRound = this.players.size;
         this.gameState.gameHistory = [];
         this.gameState.votes.clear();
         this.gameState.playerAnswers.clear();
         this.gameState.currentQuestion = null;
-        
-        // RESET VOTING READY STATES
         this.gameState.readyToVoteCount = 0;
         this.gameState.readyToVotePlayers.clear();
-        
         this.gameState.questionAskedThisTurn = false;
         this.gameState.waitingForAnswer = false;
         
-        // Shuffle question queue
+        // Initialize bot suspicion tracking
+        this.botSuspicion.clear();
+        for (const [botId, bot] of this.bots.entries()) {
+            bot.suspicion.clear();
+            for (const playerId of this.playerOrder) {
+                if (playerId !== botId) {
+                    bot.suspicion.set(playerId, 0);
+                }
+            }
+        }
+        
         this.shuffleArray(this.gameState.questionQueue);
         
         return true;
@@ -340,19 +650,15 @@ class GameRoom {
         return this.gameState.questionQueue.shift();
     }
 
-    // Enhanced ask question handling
     handleAskQuestion(askerId, targetId) {
-        // Check if it's the player's turn
         if (this.getCurrentPlayer() !== askerId) {
             return { error: 'Not your turn' };
         }
 
-        // Check if question already asked this turn
         if (this.gameState.questionAskedThisTurn) {
             return { error: 'Question already asked this turn' };
         }
 
-        // Check if we're waiting for an answer
         if (this.gameState.waitingForAnswer) {
             return { error: 'Waiting for answer to previous question' };
         }
@@ -361,14 +667,12 @@ class GameRoom {
         const askerName = this.players.get(askerId).name;
         const targetName = this.players.get(targetId).name;
 
-        // Store current question for tracking
         this.gameState.currentQuestion = {
             askerId,
             targetId,
             question
         };
 
-        // Mark question as asked and waiting for answer
         this.gameState.questionAskedThisTurn = true;
         this.gameState.waitingForAnswer = true;
 
@@ -384,12 +688,42 @@ class GameRoom {
         };
     }
 
+    // NEW: Handle bot asking question
+    handleBotAskQuestion(botId) {
+        const bot = this.bots.get(botId);
+        if (!bot) return null;
+        
+        const availablePlayers = this.playerOrder.filter(id => id !== botId);
+        if (availablePlayers.length === 0) return null;
+        
+        const targetId = bot.chooseQuestionTarget(
+            availablePlayers.map(id => ({ id, isBot: this.players.get(id).isBot })), 
+            bot.suspicion
+        );
+        
+        if (!targetId) return null;
+        
+        return this.handleAskQuestion(botId, targetId);
+    }
+
+    // NEW: Generate bot answer
+    generateBotAnswer(botId, question) {
+        const bot = this.bots.get(botId);
+        const player = this.players.get(botId);
+        
+        if (!bot || !player) return 'not sure';
+        
+        const isImposter = botId === this.gameState.imposter;
+        const location = this.gameState.location;
+        
+        return bot.generateResponse(question, location, isImposter, this.gameState.gameHistory);
+    }
+
     processAnswer(askerId, targetId, question, answer) {
         console.log(`Processing answer in room ${this.roomCode}:`);
         console.log(`Asker: ${this.players.get(askerId).name}, Target: ${this.players.get(targetId).name}`);
         console.log(`Question: ${question}, Answer: ${answer}`);
         
-        // Add to game history
         this.gameState.gameHistory.push({
             asker: this.players.get(askerId).name,
             target: this.players.get(targetId).name,
@@ -398,37 +732,45 @@ class GameRoom {
             round: this.gameState.currentRound
         });
 
-        // SIMPLIFIED: Just log everything - you decide what to learn from later
         const targetPlayer = this.players.get(targetId);
         this.currentGameData.playerQAs.push({
             asker: this.players.get(askerId).name,
             target: targetPlayer.name,
             question: question,
             answer: answer,
-            targetRole: targetPlayer.role, // 'imposter' or location name
+            targetRole: targetPlayer.role,
             wasTargetImposter: targetId === this.gameState.imposter,
             round: this.gameState.currentRound
         });
 
-        // Update scoreboard
         const askerStats = this.scoreboard.get(askerId);
         const targetStats = this.scoreboard.get(targetId);
         askerStats.questionsAsked++;
         targetStats.questionsAnswered++;
 
-        // Track player answers
         const targetName = this.players.get(targetId).name;
         if (!this.gameState.playerAnswers.has(targetName)) {
             this.gameState.playerAnswers.set(targetName, []);
         }
         this.gameState.playerAnswers.get(targetName).push(answer);
 
-        // Reset question flags when moving to next turn
+        // Update bot suspicion levels
+        for (const [botId, bot] of this.bots.entries()) {
+            if (botId !== targetId) {
+                bot.updateSuspicion(
+                    targetId, 
+                    answer, 
+                    question, 
+                    this.gameState.location, 
+                    botId === this.gameState.imposter
+                );
+            }
+        }
+
         this.gameState.questionAskedThisTurn = false;
         this.gameState.waitingForAnswer = false;
         this.gameState.currentQuestion = null;
 
-        // Move to next turn
         this.gameState.questionsThisRound++;
         this.gameState.currentTurn = (this.gameState.currentTurn + 1) % this.playerOrder.length;
 
@@ -439,7 +781,7 @@ class GameRoom {
     readyToVote(playerId) {
         if (this.gameState.readyToVotePlayers.has(playerId)) {
             console.log(`Player ${this.players.get(playerId).name} already marked ready to vote`);
-            return; // Player already marked ready
+            return;
         }
 
         this.gameState.readyToVotePlayers.add(playerId);
@@ -447,7 +789,6 @@ class GameRoom {
         
         console.log(`${this.players.get(playerId).name} is ready to vote. Count: ${this.gameState.readyToVoteCount}/${this.players.size - 1}`);
 
-        // Check if enough players are ready (all except one)
         if (this.gameState.readyToVoteCount >= this.players.size - 1) {
             console.log('Enough players ready, starting voting phase');
             this.startVoting();
@@ -461,7 +802,6 @@ class GameRoom {
     }
 
     submitVote(voterId, targetId, reasoning = null) {
-        // Prevent players from voting for themselves
         if (voterId === targetId) {
             console.log(`Player ${this.players.get(voterId).name} tried to vote for themselves - ignored`);
             return;
@@ -470,7 +810,6 @@ class GameRoom {
         console.log(`Vote submitted: ${this.players.get(voterId).name} votes for ${this.players.get(targetId)?.name || 'Unknown'}`);
         this.gameState.votes.set(voterId, targetId);
         
-        // SIMPLIFIED: Just log the vote data
         const voterPlayer = this.players.get(voterId);
         const targetPlayer = this.players.get(targetId);
         this.currentGameData.playerVotes.push({
@@ -481,22 +820,38 @@ class GameRoom {
             reasoning: reasoning || null
         });
         
-        // Update voting stats
         const voterStats = this.scoreboard.get(voterId);
         voterStats.totalVotes++;
         if (targetId === this.gameState.imposter) {
             voterStats.correctVotes++;
         }
         
-        // Check if all players have voted
         if (this.gameState.votes.size === this.players.size) {
             console.log('All votes received, processing results');
             this.processVotingResults();
         }
     }
 
+    // NEW: Handle bot voting
+    handleBotVote(botId) {
+        const bot = this.bots.get(botId);
+        if (!bot) return;
+        
+        const isImposter = botId === this.gameState.imposter;
+        const availablePlayers = this.playerOrder.filter(id => id !== botId);
+        
+        const targetId = bot.chooseVoteTarget(
+            availablePlayers.map(id => ({ id, isBot: this.players.get(id).isBot })),
+            isImposter,
+            bot.suspicion
+        );
+        
+        if (targetId) {
+            this.submitVote(botId, targetId, 'Bot reasoning');
+        }
+    }
+
     processVotingResults() {
-        // Count votes
         const voteCounts = new Map();
         
         this.gameState.votes.forEach((targetId) => {
@@ -508,7 +863,6 @@ class GameRoom {
             `${this.players.get(id)?.name || 'Unknown'}: ${count}`
         ));
 
-        // Find player with most votes
         let maxVotes = 0;
         let mostVoted = null;
         voteCounts.forEach((count, playerId) => {
@@ -518,24 +872,19 @@ class GameRoom {
             }
         });
 
-        // Need at least (players - 1) votes for someone to be eliminated
         const requiredVotes = this.players.size - 1;
         console.log(`Required votes: ${requiredVotes}, Max votes: ${maxVotes}`);
         
         if (maxVotes >= requiredVotes && mostVoted) {
-            // Someone got enough votes to be eliminated
             const wasImposter = mostVoted === this.gameState.imposter;
             console.log(`${this.players.get(mostVoted).name} got enough votes. Was imposter: ${wasImposter}`);
             
             if (wasImposter) {
-                // Location team correctly identified imposter - only location team wins
                 this.endGame('location_wins', `${this.players.get(mostVoted).name} was correctly identified as the imposter!`);
             } else {
-                // Location team voted wrong person - only imposter wins
                 this.endGame('imposter_wins', `${this.players.get(mostVoted).name} was innocent. The imposter wins!`);
             }
         } else {
-            // Votes were too spread out - location team failed to coordinate, only imposter wins
             console.log('Votes too spread out, imposter wins by default');
             this.endGame('imposter_wins', `Location team failed to coordinate their votes. The imposter wins!`);
         }
@@ -567,7 +916,6 @@ class GameRoom {
             imposter: this.players.get(this.gameState.imposter).name
         };
 
-        // Set outcome and save
         this.currentGameData.outcome = winner;
         this.updateScoreboardAfterGame(winner);
         this.saveGameToHistory();
@@ -575,19 +923,15 @@ class GameRoom {
         
         console.log(`Game state after ending: status=${this.gameState.status}, winner=${winner}`);
     }
-    
 
-    // SIMPLIFIED: Save all game data to one simple file
     saveGameData() {
         if (this.currentGameData.playerQAs.length === 0) {
             console.log('No game data to save');
             return;
         }
     
-        // Store in global array for download
         allGameData.push(JSON.parse(JSON.stringify(this.currentGameData)));
     
-        // Console logging (same as before)
         let gameLog = `\n${'='.repeat(60)}\n`;
         gameLog += `GAME ${this.currentGameData.gameNumber}\n`;
         gameLog += `Timestamp: ${this.currentGameData.timestamp}\n`;
@@ -619,7 +963,6 @@ class GameRoom {
         console.log(gameLog);
         console.log(`📊 Total games stored: ${allGameData.length} (available for download)`);
         
-        // Also try to save to file (for local development)
         try {
             fs.appendFileSync('gamelogs.txt', gameLog, 'utf8');
             console.log('✅ Also saved to local file');
@@ -628,7 +971,6 @@ class GameRoom {
         }
     }
 
-    // Scoreboard update logic
     updateScoreboardAfterGame(winner) {
         console.log(`Updating scoreboard for winner: ${winner}`);
         
@@ -639,14 +981,12 @@ class GameRoom {
             let didWin = false;
             
             if (winner === 'imposter_wins') {
-                // Only the imposter gets a win point
                 if (isImposter) {
                     didWin = true;
                     stats.timesImposterWon++;
                     console.log(`${player.name} (imposter) gets win point`);
                 }
             } else if (winner === 'location_wins') {
-                // All non-imposters (location team) get a win point
                 if (!isImposter) {
                     didWin = true;
                     console.log(`${player.name} (location team) gets win point`);
@@ -657,7 +997,6 @@ class GameRoom {
                 stats.gamesWon++;
             }
             
-            // Final score is based on games won
             stats.score = stats.gamesWon;
             
             console.log(`${player.name} final stats: ${stats.gamesWon}/${stats.gamesPlayed} wins, score: ${stats.score}`);
@@ -675,7 +1014,8 @@ class GameRoom {
             players: Array.from(this.players.entries()).map(([id, player]) => ({
                 name: player.name,
                 role: player.role,
-                wasImposter: id === this.gameState.imposter
+                wasImposter: id === this.gameState.imposter,
+                isBot: player.isBot
             })),
             finalScores: Array.from(this.scoreboard.entries()).map(([id, stats]) => ({
                 name: stats.name,
@@ -687,7 +1027,6 @@ class GameRoom {
         console.log(`Game saved to history: Game #${gameRecord.gameNumber}`);
     }
 
-    // SIMPLIFIED: Just get basic stats
     getGameStats() {
         try {
             if (!fs.existsSync('gamelogs.txt')) {
@@ -714,7 +1053,8 @@ class GameRoom {
         return Array.from(this.scoreboard.entries())
             .map(([socketId, stats]) => ({
                 ...stats,
-                isOnline: this.players.has(socketId)
+                isOnline: this.players.has(socketId),
+                isBot: this.players.get(socketId)?.isBot || false
             }))
             .sort((a, b) => b.score - a.score);
     }
@@ -730,20 +1070,21 @@ class GameRoom {
             playerOrder: this.playerOrder.map(id => ({
                 id,
                 name: this.players.get(id).name,
-                isYou: id === socketId
+                isYou: id === socketId,
+                isBot: this.players.get(id).isBot
             })),
-            // Hide imposter identity unless game is ended
             imposter: this.gameState.status === 'ended' ? this.gameState.imposter : null,
             scoreboard: this.getScoreboardData(),
             readyToVoteCount: this.gameState.readyToVoteCount,
             readyToVotePlayers: Array.from(this.gameState.readyToVotePlayers),
-            gameStats: this.getGameStats(), // SIMPLIFIED: Basic stats only
-            isLocked: this.isLocked // NEW: Include lock status
+            gameStats: this.getGameStats(),
+            isLocked: this.isLocked,
+            botCount: this.bots.size,
+            usingCustomLocations: this.customLocations.length > 0
         };
     }
 }
 
-// Generate random room code (letters only)
 function generateRoomCode() {
     const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     let result = '';
@@ -770,10 +1111,13 @@ io.on('connection', (socket) => {
                 id, 
                 name: player.name, 
                 isHost: player.isHost,
-                isReady: player.isReady
+                isReady: player.isReady,
+                isBot: player.isBot
             })),
             scoreboard: room.getScoreboardData(),
-            isLocked: room.isLocked
+            isLocked: room.isLocked,
+            botCount: room.bots.size,
+            usingCustomLocations: room.customLocations.length > 0
         });
     });
 
@@ -784,7 +1128,6 @@ io.on('connection', (socket) => {
             return;
         }
         
-        // NEW: Check if room is locked
         if (room.isLocked) {
             socket.emit('error', 'Room is locked');
             return;
@@ -800,7 +1143,6 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // NEW: Generate unique name and inform if changed
         const actualName = room.addPlayer(socket.id, playerName);
         socket.join(roomCode);
         socket.emit('room_joined', { 
@@ -810,19 +1152,20 @@ io.on('connection', (socket) => {
             nameChanged: actualName !== playerName
         });
         
-        // Notify all players in room
         io.to(roomCode).emit('room_updated', { 
             players: Array.from(room.players.entries()).map(([id, player]) => ({
                 id, 
                 name: player.name, 
                 isHost: player.isHost,
-                isReady: player.isReady
+                isReady: player.isReady,
+                isBot: player.isBot
             })),
             scoreboard: room.getScoreboardData(),
-            isLocked: room.isLocked
+            isLocked: room.isLocked,
+            botCount: room.bots.size,
+            usingCustomLocations: room.customLocations.length > 0
         });
         
-        // If name was changed, notify the player
         if (actualName !== playerName) {
             socket.emit('name_changed', { 
                 originalName: playerName, 
@@ -831,7 +1174,76 @@ io.on('connection', (socket) => {
         }
     });
 
-    // NEW: Lock/unlock room
+    // NEW: Add bot
+    socket.on('add_bot', ({ difficulty = 'medium' }) => {
+        const room = findPlayerRoom(socket.id);
+        if (!room || !room.players.get(socket.id)?.isHost) {
+            socket.emit('error', 'Only the host can add bots');
+            return;
+        }
+
+        const result = room.addBot(difficulty);
+        
+        if (result.error) {
+            socket.emit('error', result.error);
+            return;
+        }
+
+        io.to(room.roomCode).emit('bot_added', {
+            botName: result.botName,
+            botCount: room.bots.size
+        });
+
+        io.to(room.roomCode).emit('room_updated', { 
+            players: Array.from(room.players.entries()).map(([id, player]) => ({
+                id, 
+                name: player.name, 
+                isHost: player.isHost,
+                isReady: player.isReady,
+                isBot: player.isBot
+            })),
+            scoreboard: room.getScoreboardData(),
+            isLocked: room.isLocked,
+            botCount: room.bots.size,
+            usingCustomLocations: room.customLocations.length > 0
+        });
+    });
+
+    // NEW: Remove bot
+    socket.on('remove_bot', ({ botId }) => {
+        const room = findPlayerRoom(socket.id);
+        if (!room || !room.players.get(socket.id)?.isHost) {
+            socket.emit('error', 'Only the host can remove bots');
+            return;
+        }
+
+        const result = room.removeBot(botId);
+        
+        if (result.error) {
+            socket.emit('error', result.error);
+            return;
+        }
+
+        io.to(room.roomCode).emit('bot_removed', {
+            botName: result.botName,
+            botCount: room.bots.size
+        });
+
+        io.to(room.roomCode).emit('room_updated', { 
+            players: Array.from(room.players.entries()).map(([id, player]) => ({
+                id, 
+                name: player.name, 
+                isHost: player.isHost,
+                isReady: player.isReady,
+                isBot: player.isBot
+            })),
+            scoreboard: room.getScoreboardData(),
+            isLocked: room.isLocked,
+            botCount: room.bots.size,
+            usingCustomLocations: room.customLocations.length > 0
+        });
+    });
+
     socket.on('toggle_lock', () => {
         const room = findPlayerRoom(socket.id);
         if (!room || !room.players.get(socket.id)?.isHost) {
@@ -841,16 +1253,18 @@ io.on('connection', (socket) => {
 
         room.setLocked(!room.isLocked);
         
-        // Notify all players
         io.to(room.roomCode).emit('room_updated', { 
             players: Array.from(room.players.entries()).map(([id, player]) => ({
                 id, 
                 name: player.name, 
                 isHost: player.isHost,
-                isReady: player.isReady
+                isReady: player.isReady,
+                isBot: player.isBot
             })),
             scoreboard: room.getScoreboardData(),
-            isLocked: room.isLocked
+            isLocked: room.isLocked,
+            botCount: room.bots.size,
+            usingCustomLocations: room.customLocations.length > 0
         });
         
         io.to(room.roomCode).emit('room_lock_changed', { 
@@ -859,7 +1273,6 @@ io.on('connection', (socket) => {
         });
     });
 
-    // NEW: Kick player
     socket.on('kick_player', ({ targetId }) => {
         const room = findPlayerRoom(socket.id);
         if (!room) {
@@ -874,29 +1287,33 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // Notify the kicked player
-        io.to(targetId).emit('kicked', { 
-            message: 'You have been kicked from the room by the host',
-            roomCode: room.roomCode
-        });
+        // If it was a human player, notify them
+        if (!result.wasBot) {
+            io.to(targetId).emit('kicked', { 
+                message: 'You have been kicked from the room by the host',
+                roomCode: room.roomCode
+            });
 
-        // Disconnect the kicked player from the room
-        const kickedSocket = io.sockets.sockets.get(targetId);
-        if (kickedSocket) {
-            kickedSocket.leave(room.roomCode);
+            const kickedSocket = io.sockets.sockets.get(targetId);
+            if (kickedSocket) {
+                kickedSocket.leave(room.roomCode);
+            }
         }
 
-        // Notify remaining players
         io.to(room.roomCode).emit('player_kicked', {
             kickedPlayerName: result.kickedPlayerName,
+            wasBot: result.wasBot,
             players: Array.from(room.players.entries()).map(([id, player]) => ({
                 id, 
                 name: player.name, 
                 isHost: player.isHost,
-                isReady: player.isReady
+                isReady: player.isReady,
+                isBot: player.isBot
             })),
             scoreboard: room.getScoreboardData(),
-            isLocked: room.isLocked
+            isLocked: room.isLocked,
+            botCount: room.bots.size,
+            usingCustomLocations: room.customLocations.length > 0
         });
     });
 
@@ -905,50 +1322,67 @@ io.on('connection', (socket) => {
         if (!room) return;
 
         const player = room.players.get(socket.id);
-        player.isReady = !player.isReady;
+        if (player && !player.isBot) { // Only human players can toggle ready
+            player.isReady = !player.isReady;
 
-        io.to(room.roomCode).emit('room_updated', { 
-            players: Array.from(room.players.entries()).map(([id, player]) => ({
-                id, 
-                name: player.name, 
-                isHost: player.isHost,
-                isReady: player.isReady
-            })),
-            scoreboard: room.getScoreboardData(),
-            isLocked: room.isLocked
-        });
+            io.to(room.roomCode).emit('room_updated', { 
+                players: Array.from(room.players.entries()).map(([id, player]) => ({
+                    id, 
+                    name: player.name, 
+                    isHost: player.isHost,
+                    isReady: player.isReady,
+                    isBot: player.isBot
+                })),
+                scoreboard: room.getScoreboardData(),
+                isLocked: room.isLocked,
+                botCount: room.bots.size,
+                usingCustomLocations: room.customLocations.length > 0
+            });
+        }
     });
 
     socket.on('start_game', (data) => {
         const room = findPlayerRoom(socket.id);
         if (!room || !room.players.get(socket.id)?.isHost) return;
 
-        // Set custom locations if provided
+        // Handle custom locations - this will remove bots if custom locations are set
         if (data && data.customLocations && Array.isArray(data.customLocations)) {
-            room.setCustomLocations(data.customLocations);
+            const removedBots = room.setCustomLocations(data.customLocations);
+            if (removedBots.length > 0) {
+                io.to(room.roomCode).emit('bots_removed_custom_locations', {
+                    removedBots,
+                    message: 'Bots removed due to custom locations'
+                });
+            }
         }
 
-        // Check if all players are ready
-        const allReady = Array.from(room.players.values()).every(player => 
+        // Check if all human players are ready
+        const humanPlayers = Array.from(room.players.values()).filter(p => !p.isBot);
+        const allHumansReady = humanPlayers.every(player => 
             player.isHost || player.isReady
         );
 
-        if (!allReady) {
-            socket.emit('error', 'Not all players are ready');
+        if (!allHumansReady) {
+            socket.emit('error', 'Not all human players are ready');
             return;
         }
 
         if (room.startGame()) {
-            // Send game state to all players
             room.players.forEach((player, socketId) => {
-                io.to(socketId).emit('game_started', room.getGameStateForPlayer(socketId));
+                if (!player.isBot) {
+                    io.to(socketId).emit('game_started', room.getGameStateForPlayer(socketId));
+                }
             });
+
+            // Start the first turn
+            setTimeout(() => {
+                handleBotTurn(room);
+            }, 1000);
         } else {
             socket.emit('error', 'Need at least 3 players to start');
         }
     });
 
-    // Enhanced ask question handler
     socket.on('ask_question', ({ targetId }) => {
         const room = findPlayerRoom(socket.id);
         if (!room || room.gameState.status !== 'playing') return;
@@ -960,20 +1394,45 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // Send question to all players
         io.to(room.roomCode).emit('question_asked', result);
+
+        // If target is bot, generate automatic response
+        const targetPlayer = room.players.get(targetId);
+        if (targetPlayer && targetPlayer.isBot) {
+            setTimeout(() => {
+                const answer = room.generateBotAnswer(targetId, result.question);
+                
+                room.processAnswer(socket.id, targetId, result.question, answer);
+
+                io.to(room.roomCode).emit('answer_submitted', {
+                    asker: result.asker,
+                    target: result.target,
+                    question: result.question,
+                    answer
+                });
+
+                room.players.forEach((player, socketId) => {
+                    if (!player.isBot) {
+                        io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+                    }
+                });
+
+                // Continue to next turn
+                setTimeout(() => {
+                    handleBotTurn(room);
+                }, 1000);
+            }, 1500); // Bot response delay
+        }
     });
 
     socket.on('submit_answer', ({ asker, target, question, answer }) => {
         const room = findPlayerRoom(socket.id);
         if (!room) return;
 
-        // Get the asker ID from the current question
         let askerId = null;
         if (room.gameState.currentQuestion && room.gameState.currentQuestion.targetId === socket.id) {
             askerId = room.gameState.currentQuestion.askerId;
         } else {
-            // Fallback: find asker by name
             for (const [id, player] of room.players.entries()) {
                 if (player.name === asker) {
                     askerId = id;
@@ -989,10 +1448,8 @@ io.on('connection', (socket) => {
 
         console.log(`Answer submitted in room ${room.roomCode}: ${answer}`);
 
-        // Process the answer
         room.processAnswer(askerId, socket.id, question, answer);
 
-        // Send answer to all players
         io.to(room.roomCode).emit('answer_submitted', {
             asker: room.players.get(askerId).name,
             target: room.players.get(socket.id).name,
@@ -1000,10 +1457,16 @@ io.on('connection', (socket) => {
             answer
         });
 
-        // Send updated game state to all players
         room.players.forEach((player, socketId) => {
-            io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+            if (!player.isBot) {
+                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+            }
         });
+
+        // Continue to next turn
+        setTimeout(() => {
+            handleBotTurn(room);
+        }, 1000);
     });
 
     socket.on('ready_to_vote', () => {
@@ -1012,28 +1475,35 @@ io.on('connection', (socket) => {
 
         room.readyToVote(socket.id);
 
-        // Broadcast the updated ready count to all players
         io.to(room.roomCode).emit('ready_count_updated', {
             readyCount: room.gameState.readyToVoteCount,
             requiredCount: room.players.size - 1
         });
 
-        // If voting starts, send game state update
         if (room.gameState.status === 'voting') {
             room.players.forEach((player, socketId) => {
-                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+                if (!player.isBot) {
+                    io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+                }
             });
+
+            // Handle bot voting
+            setTimeout(() => {
+                for (const [botId, bot] of room.bots.entries()) {
+                    if (!room.gameState.votes.has(botId)) {
+                        room.handleBotVote(botId);
+                    }
+                }
+            }, 2000);
         }
     });
 
-    // Enhanced vote submission with reasoning
     socket.on('submit_vote', ({ targetId, reasoning }) => {
         const room = findPlayerRoom(socket.id);
         if (!room || room.gameState.status !== 'voting') return;
 
         room.submitVote(socket.id, targetId, reasoning);
 
-        // Send updated vote count to all players
         const voterName = room.players.get(socket.id).name;
         const targetName = room.players.get(targetId)?.name || 'Unknown';
         
@@ -1044,32 +1514,29 @@ io.on('connection', (socket) => {
             totalPlayers: room.players.size
         });
 
-        // If voting is complete, send results
         if (room.gameState.votes.size === room.players.size) {
-            // Send immediate feedback that all votes are in
             io.to(room.roomCode).emit('all_votes_received');
             
             setTimeout(() => {
                 console.log(`Processing voting results for room ${room.roomCode}`);
                 
-                // Process voting results (this will either end game or continue to next round)
                 room.processVotingResults();
                 
                 console.log(`After processing votes: status=${room.gameState.status}`);
                 
-                // Send updated game state to all players
                 room.players.forEach((player, socketId) => {
-                    const gameStateForPlayer = room.getGameStateForPlayer(socketId);
-                    console.log(`Sending game update to ${player.name}: status=${gameStateForPlayer.status}, round=${gameStateForPlayer.currentRound}`);
-                    io.to(socketId).emit('game_updated', gameStateForPlayer);
+                    if (!player.isBot) {
+                        const gameStateForPlayer = room.getGameStateForPlayer(socketId);
+                        console.log(`Sending game update to ${player.name}: status=${gameStateForPlayer.status}, round=${gameStateForPlayer.currentRound}`);
+                        io.to(socketId).emit('game_updated', gameStateForPlayer);
+                    }
                 });
                 
-                // If game ended, also send a specific game over event
                 if (room.gameState.status === 'ended') {
                     console.log('Game ended, sending game_over event');
                     io.to(room.roomCode).emit('game_over', room.gameState.gameResult);
                 }
-            }, 2000); // Longer delay to let players see all votes are in
+            }, 2000);
         }
     });
 
@@ -1084,9 +1551,10 @@ io.on('connection', (socket) => {
         console.log(`Imposter reveal in room ${room.roomCode}: ${locationGuess}`);
         room.imposterReveal(locationGuess);
 
-        // Send final game state to all players
         room.players.forEach((player, socketId) => {
-            io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+            if (!player.isBot) {
+                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+            }
         });
     });
 
@@ -1100,7 +1568,6 @@ io.on('connection', (socket) => {
         });
     });
 
-    // SIMPLIFIED: Just get basic game stats
     socket.on('get_game_stats', () => {
         const room = findPlayerRoom(socket.id);
         if (!room) return;
@@ -1124,10 +1591,13 @@ io.on('connection', (socket) => {
                         id, 
                         name: player.name, 
                         isHost: player.isHost,
-                        isReady: player.isReady
+                        isReady: player.isReady,
+                        isBot: player.isBot
                     })),
                     scoreboard: room.getScoreboardData(),
-                    isLocked: room.isLocked
+                    isLocked: room.isLocked,
+                    botCount: room.bots.size,
+                    usingCustomLocations: room.customLocations.length > 0
                 });
             }
         }
@@ -1143,8 +1613,114 @@ io.on('connection', (socket) => {
     }
 });
 
+// NEW: Handle bot turns and auto-actions
+function handleBotTurn(room) {
+    if (room.gameState.status !== 'playing') return;
+    
+    const currentPlayer = room.getCurrentPlayer();
+    const player = room.players.get(currentPlayer);
+    
+    if (!player || !player.isBot) return; // Not a bot's turn
+    
+    console.log(`Bot turn: ${player.name}`);
+    
+    // Check if we're in voting phase
+    if (room.gameState.questionsThisRound >= room.gameState.questionsPerRound) {
+        // Bot should be ready to vote
+        if (!room.gameState.readyToVotePlayers.has(currentPlayer)) {
+            setTimeout(() => {
+                room.readyToVote(currentPlayer);
+                
+                // Notify all players
+                room.players.forEach((p, socketId) => {
+                    if (!p.isBot) {
+                        io.to(socketId).emit('ready_count_updated', {
+                            readyCount: room.gameState.readyToVoteCount,
+                            requiredCount: room.players.size - 1
+                        });
+                    }
+                });
+                
+                // If voting starts, handle bot voting
+                if (room.gameState.status === 'voting') {
+                    room.players.forEach((p, socketId) => {
+                        if (!p.isBot) {
+                            io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+                        }
+                    });
+                    
+                    setTimeout(() => {
+                        for (const [botId, bot] of room.bots.entries()) {
+                            if (!room.gameState.votes.has(botId)) {
+                                room.handleBotVote(botId);
+                            }
+                        }
+                    }, 2000);
+                }
+            }, 1500); // Bot thinking time
+        }
+        return;
+    }
+    
+    // Bot's turn to ask a question
+    if (!room.gameState.questionAskedThisTurn && !room.gameState.waitingForAnswer) {
+        setTimeout(() => {
+            const result = room.handleBotAskQuestion(currentPlayer);
+            
+            if (result && result.success) {
+                // Notify all human players
+                room.players.forEach((p, socketId) => {
+                    if (!p.isBot) {
+                        io.to(socketId).emit('question_asked', result);
+                    }
+                });
+                
+                // If target is also a bot, handle bot-to-bot interaction
+                const targetPlayer = room.players.get(result.targetId);
+                if (targetPlayer && targetPlayer.isBot) {
+                    setTimeout(() => {
+                        const answer = room.generateBotAnswer(result.targetId, result.question);
+                        
+                        room.processAnswer(result.askerId, result.targetId, result.question, answer);
+                        
+                        // Notify all human players
+                        room.players.forEach((p, socketId) => {
+                            if (!p.isBot) {
+                                io.to(socketId).emit('answer_submitted', {
+                                    asker: result.asker,
+                                    target: result.target,
+                                    question: result.question,
+                                    answer
+                                });
+                                
+                                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+                            }
+                        });
+                        
+                        // Continue to next turn
+                        setTimeout(() => {
+                            handleBotTurn(room);
+                        }, 1000);
+                    }, 1500); // Bot response time
+                }
+                // If target is human, we wait for their response
+            } else {
+                console.log('Bot failed to ask question, skipping turn');
+                // Skip this bot's turn
+                room.gameState.questionsThisRound++;
+                room.gameState.currentTurn = (room.gameState.currentTurn + 1) % room.playerOrder.length;
+                
+                setTimeout(() => {
+                    handleBotTurn(room);
+                }, 500);
+            }
+        }, 2000); // Bot thinking time
+    }
+}
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log('Game logging enabled - all game data will be saved to gamelogs.txt');
+    console.log('Bot support enabled - bots can be added to games with default locations only');
 });
