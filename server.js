@@ -645,16 +645,6 @@ class GameRoom {
         });
         
         return { success: true, botId, botName };
-    }: 0,
-            questionsAnswered: 0,
-            questionsAsked: 0,
-            correctVotes: 0,
-            totalVotes: 0,
-            roundsSurvived: 0,
-            score: 0
-        });
-        
-        return { success: true, botId, botName };
     }
 
     // NEW: Remove bot
