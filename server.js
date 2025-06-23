@@ -106,6 +106,51 @@ const questions = [
     "Are any crimes being committed here?"
 ];
 
+// NEW: Question prompts from original game
+const questionPrompts = [
+    ["Would you expect to see me here?", "yes, no, maybe, probably, probably not"],
+    ["What is the last thing you said?", "pretend youre at this location, what is the last thing you wouldve said? be very vague"],
+    ["Would you be scared if someone was near you?", "yes, no, a little, not really, very, not at all"],
+    ["What do you see around you?", "name something broad, like animals, a lot of people, something that would make sense for multiple locations in the location list"],
+    ["What do you think of the food?", "good, bad, decent, a word like that"],
+    ["What's that smell?", "answer without using a word that would only be used to describe the location"],
+    ["What's that noise?", ""],
+    ["What is the price of admission?", "just give an approximate value in CAD (dont mention CAD)"],
+    ["What time of day is it here?", "either an approximate time like 12:00PM, or something like daytime, afternoon, morning, midnight, evening"],
+    ["Who else might you meet here?", "friends, family, something like that"],
+    ["Would you want to take a picture here?", "yes, no, definitely, definitely not, maybe"],
+    ["What kind of clothing would you wear here?", "t shirt and shorts? sweater and pants? jacket? something like that"],
+    ["How long would you stay here?", "just say n hours or n days, or even half a day, something like that"],
+    ["What is the weather like?", "vague weather examples, like sunny, hot..."],
+    ["What did you bring with you?", "water, food, camera, something basic that you can bring to multiple other locations"],
+    ["How would you describe the vibe?", "something basic, like fun, scared..."],
+    ["Would you need a ticket to enter?", "yes or no"],
+    ["Do you feel safe here?", "yes, no, a little, not really, very, not at all"],
+    ["What language do people speak here?", "usually say english, or a bunch of different languages"],
+    ["What type of transportation would you use to get here?", "car, bus, walk, plane, boat, anything like that, but usually car"],
+    ["What celebrity would you expect to meet here?", "Name a celebrity that you would expect to be here."],
+    ["What is everyone wearing?", "base it off the expected weather at the location. t shirt and shorts? sweater and pants? jacket? something like that. if youre at the beach, instead of saying swimming suit, say something like 'something light'"],
+    ["What is this place's motto?", "make up a motto without using words that give away the location"],
+    ["Would you take a date here?", "yes, no, maybe, i can, probably not"],
+    ["What is the floor made out of?", "name a basic floor material, like wood, concrete, ground..."],
+    ["If you were an actor, who would you be?", "name an actor who you would expect to be here. if its dingy drug deal motel, name someone who has used drugs. if haunted mansion, name someone who has explored haunted houses in a movie... just give the name of the actor, nothing else"],
+    ["Where's a good place to smoke around here?", "nowhere, anywhere, everywhere, outside"],
+    ["What do you think would happen if I touched this button?", "name something very basic"],
+    ["How stressed are people around here?", "very, a little, not at all, kinda. small answers like that"],
+    ["If Taylor Swift were here, what would she be doing?", "performing, exploring, having fun, travelling"],
+    ["Is your family here?", "yes, no, maybe, probably, probably not"],
+    ["Do you find the people here attractive?", "yes, no, a little, not really, very, not at all"],
+    ["What animal is that?", "usually dog, maybe fish, wolf, leopard. something that can be said for multiple locations in the location list"],
+    ["What's in that corner?", "something that can be in a lot of corners"],
+    ["Why are they whispering?", "something very basic that makes sense for this location, just say why they're whispering, dont justify"],
+    ["How's your phone reception?", "great, good, decent, not good, no reception"],
+    ["What's the seating situation like around here?", "organized, very organized, all over the place, no seating"],
+    ["Are any crimes being committed here?", "yes, no, maybe, probably, probably not"]
+];
+
+// Convert to map for easy lookup
+const questionPromptsMap = new Map(questionPrompts);
+
 // Store game rooms
 const gameRooms = new Map();
 
@@ -120,37 +165,25 @@ class BotAI {
     }
 
     // Generate bot response based on role and location knowledge
-    generateResponse(question, location, isImposter, observedAnswers = []) {
+    generateResponse(question, location, isImposter, observedAnswers = [], prompt = "") {
         const questionLower = question.toLowerCase();
         
         if (isImposter) {
-            return this.generateImposterResponse(question, observedAnswers);
+            return this.generateImposterResponse(question, observedAnswers, prompt);
         } else {
-            return this.generateLocationResponse(question, location);
+            return this.generateLocationResponse(question, location, prompt);
         }
     }
 
-    generateImposterResponse(question, observedAnswers) {
+    generateImposterResponse(question, observedAnswers, prompt) {
         const questionLower = question.toLowerCase();
         
-        // Try to blend in based on other answers
-        if (observedAnswers.length > 0) {
-            // Look for patterns in previous answers
-            const answers = observedAnswers.map(a => a.answer.toLowerCase());
-            
-            if (questionLower.includes('safe') || questionLower.includes('scared')) {
-                const safetyAnswers = answers.filter(a => a.includes('yes') || a.includes('no') || a.includes('maybe'));
-                if (safetyAnswers.length > 0) {
-                    return this.randomChoice(['maybe', 'not really', 'somewhat']);
-                }
-            }
-            
-            if (questionLower.includes('weather')) {
-                return this.randomChoice(['nice', 'okay', 'decent', 'alright']);
-            }
+        // Use specific prompt if available
+        if (prompt) {
+            return this.generatePromptBasedResponse(question, null, true, prompt, observedAnswers);
         }
         
-        // Fallback generic responses
+        // Fallback generic responses for imposters
         if (questionLower.includes('safe') || questionLower.includes('scared')) {
             return this.randomChoice(['maybe', 'not really', 'somewhat', 'a little']);
         }
@@ -166,27 +199,20 @@ class BotAI {
         if (questionLower.includes('celebrity')) {
             return this.randomChoice(['Tom Hanks', 'Jennifer Lawrence', 'Ryan Reynolds']);
         }
-        if (questionLower.includes('transportation')) {
-            return this.randomChoice(['car', 'bus', 'plane']);
-        }
-        if (questionLower.includes('clothing') || questionLower.includes('wear')) {
-            return this.randomChoice(['casual clothes', 'comfortable clothes', 'normal clothes']);
-        }
-        if (questionLower.includes('food')) {
-            return this.randomChoice(['decent', 'okay', 'alright']);
-        }
-        if (questionLower.includes('ticket')) {
-            return this.randomChoice(['maybe', 'not sure', 'depends']);
-        }
         
         return this.randomChoice(['not sure', 'maybe', 'depends', 'hard to say']);
     }
 
-    generateLocationResponse(question, location) {
+    generateLocationResponse(question, location, prompt) {
         const questionLower = question.toLowerCase();
         const locationLower = location.toLowerCase();
         
-        // Location-specific responses
+        // Use specific prompt if available
+        if (prompt) {
+            return this.generatePromptBasedResponse(question, location, false, prompt);
+        }
+        
+        // Location-specific responses (fallback)
         if (locationLower.includes('space station')) {
             if (questionLower.includes('weather')) return 'controlled';
             if (questionLower.includes('transportation')) return 'rocket';
@@ -201,43 +227,191 @@ class BotAI {
             if (questionLower.includes('safe')) return 'yes';
         }
         
-        if (locationLower.includes('prison')) {
-            if (questionLower.includes('safe')) return 'no';
-            if (questionLower.includes('see around')) return 'people';
-            if (questionLower.includes('vibe')) return 'tense';
-        }
-        
-        if (locationLower.includes('high school')) {
-            if (questionLower.includes('meet')) return 'friends';
-            if (questionLower.includes('see around')) return 'people';
-            if (questionLower.includes('food')) return 'decent';
-            if (questionLower.includes('safe')) return 'yes';
-        }
-        
-        // Generic location-aware responses
-        if (questionLower.includes('safe') || questionLower.includes('scared')) {
-            return this.randomChoice(['yes', 'mostly', 'usually']);
-        }
-        if (questionLower.includes('see around')) {
-            return this.randomChoice(['people', 'workers', 'visitors']);
-        }
-        if (questionLower.includes('meet')) {
-            return this.randomChoice(['friends', 'family', 'people']);
-        }
-        if (questionLower.includes('celebrity')) {
-            return this.randomChoice(['Tom Hanks', 'Jennifer Lawrence', 'Ryan Reynolds']);
-        }
-        if (questionLower.includes('transportation')) {
-            return this.randomChoice(['car', 'bus']);
-        }
-        if (questionLower.includes('weather')) {
-            return this.randomChoice(['nice', 'good', 'pleasant']);
-        }
-        if (questionLower.includes('food')) {
-            return this.randomChoice(['good', 'decent', 'alright']);
-        }
-        
         return this.randomChoice(['good', 'nice', 'okay', 'decent']);
+    }
+
+    // NEW: Generate response based on specific prompt instructions
+    generatePromptBasedResponse(question, location, isImposter, prompt, observedAnswers = []) {
+        const questionLower = question.toLowerCase();
+        const promptLower = prompt.toLowerCase();
+        
+        // Handle specific prompt patterns
+        if (promptLower.includes('yes, no, maybe, probably')) {
+            return this.randomChoice(['yes', 'no', 'maybe', 'probably', 'probably not']);
+        }
+        
+        if (promptLower.includes('good, bad, decent')) {
+            return this.randomChoice(['good', 'bad', 'decent']);
+        }
+        
+        if (promptLower.includes('very, a little, not at all')) {
+            return this.randomChoice(['very', 'a little', 'not at all', 'kinda']);
+        }
+        
+        if (promptLower.includes('friends, family')) {
+            return this.randomChoice(['friends', 'family', 'people', 'visitors']);
+        }
+        
+        if (promptLower.includes('water, food, camera')) {
+            return this.randomChoice(['water', 'food', 'camera', 'bag', 'phone']);
+        }
+        
+        if (promptLower.includes('car, bus, walk, plane')) {
+            if (isImposter) {
+                return this.randomChoice(['car', 'bus', 'plane']);
+            } else if (location) {
+                const locationLower = location.toLowerCase();
+                if (locationLower.includes('space station')) return 'rocket';
+                if (locationLower.includes('submarine')) return 'boat';
+                if (locationLower.includes('beach') || locationLower.includes('safari')) return 'car';
+                return this.randomChoice(['car', 'bus']);
+            }
+            return this.randomChoice(['car', 'bus', 'plane']);
+        }
+        
+        if (promptLower.includes('t shirt and shorts') || promptLower.includes('sweater and pants')) {
+            if (!isImposter && location) {
+                const locationLower = location.toLowerCase();
+                if (locationLower.includes('space station') || locationLower.includes('submarine')) {
+                    return 'special clothes';
+                }
+                if (locationLower.includes('beach')) return 'light clothes';
+                if (locationLower.includes('prison')) return 'uniform';
+            }
+            return this.randomChoice(['casual clothes', 'comfortable clothes', 'normal clothes']);
+        }
+        
+        if (promptLower.includes('sunny, hot')) {
+            if (!isImposter && location) {
+                const locationLower = location.toLowerCase();
+                if (locationLower.includes('beach') || locationLower.includes('safari')) return 'hot';
+                if (locationLower.includes('space station')) return 'controlled';
+                if (locationLower.includes('titanic') || locationLower.includes('submarine')) return 'cold';
+            }
+            return this.randomChoice(['nice', 'okay', 'decent']);
+        }
+        
+        if (promptLower.includes('wood, concrete, ground')) {
+            if (!isImposter && location) {
+                const locationLower = location.toLowerCase();
+                if (locationLower.includes('beach')) return 'sand';
+                if (locationLower.includes('titanic')) return 'wood';
+                if (locationLower.includes('prison') || locationLower.includes('space station')) return 'concrete';
+            }
+            return this.randomChoice(['wood', 'concrete', 'ground', 'floor']);
+        }
+        
+        if (promptLower.includes('nowhere, anywhere, everywhere, outside')) {
+            if (!isImposter && location) {
+                const locationLower = location.toLowerCase();
+                if (locationLower.includes('prison') || locationLower.includes('daycare')) return 'nowhere';
+                if (locationLower.includes('space station') || locationLower.includes('submarine')) return 'nowhere';
+            }
+            return this.randomChoice(['outside', 'nowhere', 'anywhere']);
+        }
+        
+        if (promptLower.includes('great, good, decent, not good, no reception')) {
+            if (!isImposter && location) {
+                const locationLower = location.toLowerCase();
+                if (locationLower.includes('space station') || locationLower.includes('submarine')) return 'no reception';
+                if (locationLower.includes('titanic')) return 'no reception';
+                if (locationLower.includes('prison')) return 'not good';
+            }
+            return this.randomChoice(['great', 'good', 'decent', 'not good']);
+        }
+        
+        if (promptLower.includes('organized, very organized, all over the place, no seating')) {
+            if (!isImposter && location) {
+                const locationLower = location.toLowerCase();
+                if (locationLower.includes('concert hall') || locationLower.includes('high school')) return 'organized';
+                if (locationLower.includes('beach') || locationLower.includes('safari')) return 'no seating';
+            }
+            return this.randomChoice(['organized', 'all over the place', 'no seating']);
+        }
+        
+        if (promptLower.includes('name a celebrity')) {
+            const celebrities = ['Tom Hanks', 'Jennifer Lawrence', 'Leonardo DiCaprio', 'Ryan Reynolds', 'Will Smith'];
+            if (!isImposter && location) {
+                const locationLower = location.toLowerCase();
+                if (locationLower.includes('titanic')) return 'Leonardo DiCaprio';
+                if (locationLower.includes('concert hall')) return 'Taylor Swift';
+                if (locationLower.includes('high school')) return 'Zac Efron';
+            }
+            return this.randomChoice(celebrities);
+        }
+        
+        if (promptLower.includes('name an actor')) {
+            const actors = ['Tom Hanks', 'Brad Pitt', 'Will Smith', 'Johnny Depp', 'Robert Downey Jr'];
+            return this.randomChoice(actors);
+        }
+        
+        if (promptLower.includes('performing, exploring, having fun, travelling')) {
+            if (!isImposter && location) {
+                const locationLower = location.toLowerCase();
+                if (locationLower.includes('concert hall') || locationLower.includes('circus')) return 'performing';
+                if (locationLower.includes('safari') || locationLower.includes('space station')) return 'exploring';
+            }
+            return this.randomChoice(['performing', 'exploring', 'having fun', 'travelling']);
+        }
+        
+        if (promptLower.includes('name something very basic')) {
+            return this.randomChoice(['something happens', 'it opens', 'it starts', 'alarm goes off', 'nothing']);
+        }
+        
+        if (promptLower.includes('dog, maybe fish, wolf, leopard')) {
+            if (!isImposter && location) {
+                const locationLower = location.toLowerCase();
+                if (locationLower.includes('safari')) return 'leopard';
+                if (locationLower.includes('space station') || locationLower.includes('submarine')) return 'fish';
+                if (locationLower.includes('prison')) return 'dog';
+            }
+            return this.randomChoice(['dog', 'cat', 'bird']);
+        }
+        
+        if (promptLower.includes('something that can be in a lot of corners')) {
+            return this.randomChoice(['trash', 'chair', 'table', 'person', 'nothing']);
+        }
+        
+        if (promptLower.includes('just give an approximate value')) {
+            if (!isImposter && location) {
+                const locationLower = location.toLowerCase();
+                if (locationLower.includes('amusement park') || locationLower.includes('circus')) return '50';
+                if (locationLower.includes('concert hall')) return '100';
+                if (locationLower.includes('titanic')) return '500';
+                if (locationLower.includes('high school') || locationLower.includes('daycare')) return 'free';
+            }
+            return this.randomChoice(['20', '50', 'free', '30']);
+        }
+        
+        if (promptLower.includes('12:00pm, or something like daytime')) {
+            return this.randomChoice(['morning', 'afternoon', 'evening', 'daytime', '12:00PM', '3:00PM']);
+        }
+        
+        if (promptLower.includes('n hours or n days')) {
+            return this.randomChoice(['2 hours', '3 hours', 'half a day', '1 day', 'few hours']);
+        }
+        
+        if (promptLower.includes('something basic, like fun, scared')) {
+            if (!isImposter && location) {
+                const locationLower = location.toLowerCase();
+                if (locationLower.includes('prison') || locationLower.includes('zombie') || locationLower.includes('haunted')) return 'scary';
+                if (locationLower.includes('amusement park') || locationLower.includes('circus')) return 'fun';
+                if (locationLower.includes('titanic')) return 'sad';
+            }
+            return this.randomChoice(['fun', 'nice', 'okay', 'interesting']);
+        }
+        
+        if (promptLower.includes('english, or a bunch of different languages')) {
+            return this.randomChoice(['English', 'different languages', 'many languages', 'mostly English']);
+        }
+        
+        if (promptLower.includes('make up a motto')) {
+            const mottos = ['Have fun', 'Stay safe', 'Enjoy yourself', 'Welcome', 'Be careful'];
+            return this.randomChoice(mottos);
+        }
+        
+        // Default fallback
+        return this.randomChoice(['not sure', 'maybe', 'okay', 'decent']);
     }
 
     // Choose target for asking questions
@@ -360,6 +534,12 @@ class GameRoom {
     generateUniqueName(requestedName) {
         const existingNames = Array.from(this.players.values()).map(p => p.name);
         
+        // Check for bot-like names and reject them
+        const nameLower = requestedName.toLowerCase();
+        if (nameLower.startsWith('bot') || nameLower.startsWith('b0t')) {
+            requestedName = 'Player'; // Force rename bot-like names
+        }
+        
         if (!existingNames.includes(requestedName)) {
             return requestedName;
         }
@@ -426,8 +606,8 @@ class GameRoom {
         
         const botId = `bot_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
         const botNames = [
-            'Bot Alpha', 'Bot Beta', 'Bot Gamma', 'Bot Delta', 'Bot Echo', 
-            'Bot Foxtrot', 'Bot Golf', 'Bot Hotel'
+            'Bot-1', 'Bot-2', 'Bot-3', 'Bot-4', 'Bot-5', 
+            'Bot-6', 'Bot-7', 'Bot-8'
         ];
         
         const usedBotNames = Array.from(this.players.values())
@@ -435,7 +615,7 @@ class GameRoom {
             .map(p => p.name);
         
         const availableBotNames = botNames.filter(name => !usedBotNames.includes(name));
-        const botName = availableBotNames.length > 0 ? availableBotNames[0] : `Bot ${this.players.size + 1}`;
+        const botName = availableBotNames.length > 0 ? availableBotNames[0] : `Bot-${this.players.size + 1}`;
         
         // Add bot as player
         this.players.set(botId, {
@@ -456,6 +636,16 @@ class GameRoom {
             gamesWon: 0,
             timesImposter: 0,
             timesImposterWon: 0,
+            questionsAnswered: 0,
+            questionsAsked: 0,
+            correctVotes: 0,
+            totalVotes: 0,
+            roundsSurvived: 0,
+            score: 0
+        });
+        
+        return { success: true, botId, botName };
+    }: 0,
             questionsAnswered: 0,
             questionsAsked: 0,
             correctVotes: 0,
@@ -647,7 +837,9 @@ class GameRoom {
             this.gameState.questionQueue = [...questions];
             this.shuffleArray(this.gameState.questionQueue);
         }
-        return this.gameState.questionQueue.shift();
+        const question = this.gameState.questionQueue.shift();
+        const prompt = questionPromptsMap.get(question) || "";
+        return { question, prompt };
     }
 
     handleAskQuestion(askerId, targetId) {
@@ -663,14 +855,15 @@ class GameRoom {
             return { error: 'Waiting for answer to previous question' };
         }
 
-        const question = this.getNextQuestion();
+        const { question, prompt } = this.getNextQuestion();
         const askerName = this.players.get(askerId).name;
         const targetName = this.players.get(targetId).name;
 
         this.gameState.currentQuestion = {
             askerId,
             targetId,
-            question
+            question,
+            prompt
         };
 
         this.gameState.questionAskedThisTurn = true;
@@ -683,6 +876,7 @@ class GameRoom {
             asker: askerName,
             target: targetName,
             question,
+            prompt,
             askerId,
             targetId
         };
@@ -706,8 +900,8 @@ class GameRoom {
         return this.handleAskQuestion(botId, targetId);
     }
 
-    // NEW: Generate bot answer
-    generateBotAnswer(botId, question) {
+    // NEW: Generate bot answer with proper prompt
+    generateBotAnswer(botId, question, prompt = "") {
         const bot = this.bots.get(botId);
         const player = this.players.get(botId);
         
@@ -716,7 +910,7 @@ class GameRoom {
         const isImposter = botId === this.gameState.imposter;
         const location = this.gameState.location;
         
-        return bot.generateResponse(question, location, isImposter, this.gameState.gameHistory);
+        return bot.generateResponse(question, location, isImposter, this.gameState.gameHistory, prompt);
     }
 
     processAnswer(askerId, targetId, question, answer) {
@@ -1400,7 +1594,8 @@ io.on('connection', (socket) => {
         const targetPlayer = room.players.get(targetId);
         if (targetPlayer && targetPlayer.isBot) {
             setTimeout(() => {
-                const answer = room.generateBotAnswer(targetId, result.question);
+                const prompt = result.prompt || "";
+                const answer = room.generateBotAnswer(targetId, result.question, prompt);
                 
                 room.processAnswer(socket.id, targetId, result.question, answer);
 
@@ -1679,7 +1874,8 @@ function handleBotTurn(room) {
                 const targetPlayer = room.players.get(result.targetId);
                 if (targetPlayer && targetPlayer.isBot) {
                     setTimeout(() => {
-                        const answer = room.generateBotAnswer(result.targetId, result.question);
+                        const prompt = result.prompt || "";
+                        const answer = room.generateBotAnswer(result.targetId, result.question, prompt);
                         
                         room.processAnswer(result.askerId, result.targetId, result.question, answer);
                         
