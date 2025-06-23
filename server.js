@@ -268,17 +268,16 @@ class BotAI {
             return this.randomChoice(['water', 'food', 'camera', 'bag', 'phone']);
         }
         
-        if (promptLower.includes('car, bus, walk, plane')) {
-            if (isImposter) {
-                return this.randomChoice(['car', 'bus', 'plane']);
-            } else if (location) {
+        if (promptLower.includes('car, bus, walk, plane, boat')) {
+            if (!isImposter && location) {
                 const locationLower = location.toLowerCase();
                 if (locationLower.includes('space station')) return 'rocket';
-                if (locationLower.includes('submarine')) return 'boat';
-                if (locationLower.includes('beach') || locationLower.includes('safari')) return 'car';
-                return this.randomChoice(['car', 'bus']);
+                if (locationLower.includes('submarine') || locationLower.includes('titanic')) return 'boat';
+                if (locationLower.includes('airplane')) return 'plane';
+                if (locationLower.includes('safari')) return 'car';
+                if (locationLower.includes('high school') || locationLower.includes('daycare')) return 'bus';
             }
-            return this.randomChoice(['car', 'bus', 'plane']);
+            return this.randomChoice(['car', 'bus', 'walk', 'plane']);
         }
         
         if (promptLower.includes('t shirt and shorts') || promptLower.includes('sweater and pants')) {
@@ -293,14 +292,16 @@ class BotAI {
             return this.randomChoice(['casual clothes', 'comfortable clothes', 'normal clothes']);
         }
         
-        if (promptLower.includes('sunny, hot')) {
+        if (promptLower.includes('vague weather examples, like sunny, hot')) {
             if (!isImposter && location) {
                 const locationLower = location.toLowerCase();
                 if (locationLower.includes('beach') || locationLower.includes('safari')) return 'hot';
                 if (locationLower.includes('space station')) return 'controlled';
                 if (locationLower.includes('titanic') || locationLower.includes('submarine')) return 'cold';
+                if (locationLower.includes('burning')) return 'very hot';
+                if (locationLower.includes('concert hall') || locationLower.includes('high school')) return 'comfortable';
             }
-            return this.randomChoice(['nice', 'okay', 'decent']);
+            return this.randomChoice(['sunny', 'nice', 'warm', 'cool', 'comfortable']);
         }
         
         if (promptLower.includes('wood, concrete, ground')) {
@@ -406,14 +407,23 @@ class BotAI {
         if (promptLower.includes('something basic, like fun, scared')) {
             if (!isImposter && location) {
                 const locationLower = location.toLowerCase();
-                if (locationLower.includes('prison') || locationLower.includes('zombie') || locationLower.includes('haunted')) return 'scary';
-                if (locationLower.includes('amusement park') || locationLower.includes('circus')) return 'fun';
+                if (locationLower.includes('prison') || locationLower.includes('zombie') || locationLower.includes('haunted') || locationLower.includes('burning')) return 'scary';
+                if (locationLower.includes('amusement park') || locationLower.includes('circus') || locationLower.includes('beach')) return 'fun';
                 if (locationLower.includes('titanic')) return 'sad';
+                if (locationLower.includes('concert hall')) return 'exciting';
+                if (locationLower.includes('space station')) return 'amazing';
+                if (locationLower.includes('high school')) return 'nostalgic';
             }
-            return this.randomChoice(['fun', 'nice', 'okay', 'interesting']);
+            return this.randomChoice(['fun', 'exciting', 'calm', 'interesting', 'busy']);
         }
         
-        if (promptLower.includes('english, or a bunch of different languages')) {
+        if (promptLower.includes('usually say english, or a bunch of different languages')) {
+            if (!isImposter && location) {
+                const locationLower = location.toLowerCase();
+                if (locationLower.includes('space station')) return 'many languages';
+                if (locationLower.includes('safari')) return 'different languages';
+                if (locationLower.includes('high school') || locationLower.includes('prison')) return 'English';
+            }
             return this.randomChoice(['English', 'different languages', 'many languages', 'mostly English']);
         }
         
