@@ -3,67 +3,8 @@ const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
 const fs = require('fs');
-const allGameData = [];
-
-const app = express();
-const server = http.createServer(app);
-const io = socketIo(server);
-
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
-
-app.get('/download-all-games', (req, res) => {
-    if (allGameData.length === 0) {
-        res.status(404).send('No game data available yet');
-        return;
-    }
-
-    let output = '';
-    allGameData.forEach(gameData => {
-        output += '============================================================\n';
-        output += `GAME ${gameData.gameNumber}\n`;
-        output += `Game Type: ${gameData.gameType}\n`;
-        output += `Timestamp: ${gameData.timestamp}\n`;
-        output += `Room: ${gameData.roomCode}\n`;
-        output += `${gameData.gameType === 'mole' ? 'Location' : gameData.gameType === 'nba' ? 'NBA Player' : 'Rapper'}: ${gameData.location}\n`;
-        output += `Imposter: ${gameData.imposter}\n`;
-        output += `Outcome: ${gameData.outcome}\n`;
-        output += '\n';
-        
-        if (gameData.gameType === 'mole') {
-            output += 'QUESTIONS AND ANSWERS:\n';
-            gameData.playerQAs.forEach(qa => {
-                output += `${qa.asker} asks ${qa.target}: "${qa.question}"\n`;
-                output += `${qa.target} (${qa.targetRole}): "${qa.answer}"\n`;
-                output += '\n';
-            });
-        } else {
-            output += 'HINTS:\n';
-            gameData.playerHints.forEach(hint => {
-                output += `${hint.player} (${hint.playerRole}): "${hint.hint}"\n`;
-                output += '\n';
-            });
-        }
-        
-        output += 'VOTES:\n';
-        gameData.playerVotes.forEach(vote => {
-            const correctText = vote.wasCorrect ? 'CORRECT' : 'WRONG';
-            output += `${vote.voter} votes for ${vote.votedFor} (${correctText})\n`;
-            if (vote.reasoning) {
-                output += `Reasoning: ${vote.reasoning}\n`;
-            }
-        });
-        
-        output += '============================================================\n\n';
-    });
-
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `game-collection-all-games-${timestamp}.txt`;
-    
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Type', 'text/plain');
-    res.send(output);
-});
 
 // Game configuration
 const defaultLocations = [
@@ -1052,24 +993,11 @@ class GameRoom {
         this.currentGameData.outcome = winner;
         this.updateScoreboardAfterGame(winner);
         this.saveGameToHistory();
-        this.saveGameData();
         
         console.log(`Game state after ending: status=${this.gameState.status}, winner=${winner}`);
     }
 
-    saveGameData() {
-        if (this.gameType === 'mole' && this.currentGameData.playerQAs.length === 0) {
-            console.log('No Mole game data to save');
-            return;
-        }
-        if (this.gameType !== 'mole' && this.currentGameData.playerHints.length === 0) {
-            console.log('No hint game data to save');
-            return;
-        }
-    
-        allGameData.push(JSON.parse(JSON.stringify(this.currentGameData)));
-        console.log(`📊 Total games stored: ${allGameData.length} (available for download)`);
-    }
+
 
     updateScoreboardAfterGame(winner) {
         console.log(`Updating scoreboard for winner: ${winner}`);

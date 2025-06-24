@@ -588,6 +588,48 @@
             margin: 1rem 0;
         }
 
+        /* NEW: Autocomplete styles for imposter guess input */
+        .autocomplete-container {
+            position: relative;
+        }
+
+        .autocomplete-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: rgba(26, 26, 46, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 0 0 8px 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+
+        .autocomplete-suggestion {
+            padding: 12px;
+            cursor: pointer;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            transition: background-color 0.2s ease;
+        }
+
+        .autocomplete-suggestion:hover,
+        .autocomplete-suggestion.selected {
+            background: rgba(52, 152, 219, 0.3);
+        }
+
+        .autocomplete-suggestion:last-child {
+            border-bottom: none;
+        }
+
+        .imposter-guess-hint {
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 0.5rem;
+            font-style: italic;
+        }
+
         @media (max-width: 768px) {
             .title {
                 font-size: 2rem;
@@ -853,17 +895,21 @@
         </div>
     </div>
 
+    <!-- UPDATED: Imposter modal with text input instead of dropdown -->
     <div id="imposter-modal" class="modal">
         <div class="modal-content">
             <h3>🎭 Imposter Reveal!</h3>
             <p id="imposter-modal-text">You're revealing as the imposter. What location do you think it is?</p>
             <div class="input-group">
                 <label id="imposter-guess-label">Location Guess:</label>
-                <select id="location-guess">
-                    <option value="">Select location</option>
-                </select>
+                <div class="imposter-guess-hint" id="imposter-guess-hint">Start typing to see suggestions...</div>
+                <div class="autocomplete-container">
+                    <input type="text" id="location-guess-input" placeholder="Type your guess here..." autocomplete="off">
+                    <div class="autocomplete-suggestions" id="autocomplete-suggestions"></div>
+                </div>
             </div>
             <button class="btn btn-danger" onclick="submitImposterReveal()">Submit Guess</button>
+            <button class="btn btn-secondary" onclick="hideModal('imposter-modal')">✕ Cancel</button>
         </div>
     </div>
 
@@ -937,6 +983,10 @@
         let botCount = 0;
         let usingCustomLocations = false;
         let currentGameType = ''; // NEW: Track current game type
+
+        // NEW: Autocomplete variables
+        let currentSuggestions = [];
+        let selectedSuggestionIndex = -1;
 
         const locations = [
             "Circus", "Amusement Park", "Crashing Airplane", "Titanic",
@@ -1040,31 +1090,113 @@
             });
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            populateLocationsList(locations); // Default to locations
-            updateImposterModalLocations();
-        });
-
-        function updateImposterModalLocations() {
-            const locationGuessSelect = document.getElementById('location-guess');
-            locationGuessSelect.innerHTML = '<option value="">Select location</option>';
+        // NEW: Autocomplete functionality for imposter guess
+        function initializeAutocomplete() {
+            const input = document.getElementById('location-guess-input');
+            const suggestionsContainer = document.getElementById('autocomplete-suggestions');
             
-            let itemsToUse = locations;
-            if (currentGameType === 'nba') {
-                itemsToUse = nbaPlayers;
-            } else if (currentGameType === 'rapper') {
-                itemsToUse = rappers;
-            } else if (customLocations.length > 0) {
-                itemsToUse = customLocations;
-            }
+            input.addEventListener('input', function() {
+                const query = this.value.trim().toLowerCase();
+                
+                if (query.length === 0) {
+                    hideSuggestions();
+                    return;
+                }
+                
+                let itemsToSearch = locations;
+                if (currentGameType === 'nba') {
+                    itemsToSearch = nbaPlayers;
+                } else if (currentGameType === 'rapper') {
+                    itemsToSearch = rappers;
+                } else if (customLocations.length > 0) {
+                    itemsToSearch = customLocations;
+                }
+                
+                const matches = itemsToSearch.filter(item => 
+                    item.toLowerCase().includes(query)
+                ).slice(0, 10); // Limit to 10 suggestions
+                
+                showSuggestions(matches);
+            });
             
-            itemsToUse.forEach(item => {
-                const option = document.createElement('option');
-                option.value = item;
-                option.textContent = item;
-                locationGuessSelect.appendChild(option);
+            input.addEventListener('keydown', function(e) {
+                const suggestionsContainer = document.getElementById('autocomplete-suggestions');
+                const suggestions = suggestionsContainer.querySelectorAll('.autocomplete-suggestion');
+                
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    selectedSuggestionIndex = Math.min(selectedSuggestionIndex + 1, suggestions.length - 1);
+                    updateSelectedSuggestion();
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    selectedSuggestionIndex = Math.max(selectedSuggestionIndex - 1, -1);
+                    updateSelectedSuggestion();
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (selectedSuggestionIndex >= 0 && suggestions[selectedSuggestionIndex]) {
+                        selectSuggestion(suggestions[selectedSuggestionIndex].textContent);
+                    } else {
+                        submitImposterReveal();
+                    }
+                } else if (e.key === 'Escape') {
+                    hideSuggestions();
+                }
+            });
+            
+            // Hide suggestions when clicking outside
+            document.addEventListener('click', function(e) {
+                if (!e.target.closest('.autocomplete-container')) {
+                    hideSuggestions();
+                }
             });
         }
+        
+        function showSuggestions(matches) {
+            const suggestionsContainer = document.getElementById('autocomplete-suggestions');
+            currentSuggestions = matches;
+            selectedSuggestionIndex = -1;
+            
+            if (matches.length === 0) {
+                hideSuggestions();
+                return;
+            }
+            
+            suggestionsContainer.innerHTML = '';
+            matches.forEach((match, index) => {
+                const div = document.createElement('div');
+                div.className = 'autocomplete-suggestion';
+                div.textContent = match;
+                div.addEventListener('click', () => selectSuggestion(match));
+                suggestionsContainer.appendChild(div);
+            });
+            
+            suggestionsContainer.style.display = 'block';
+        }
+        
+        function hideSuggestions() {
+            const suggestionsContainer = document.getElementById('autocomplete-suggestions');
+            suggestionsContainer.style.display = 'none';
+            selectedSuggestionIndex = -1;
+        }
+        
+        function updateSelectedSuggestion() {
+            const suggestions = document.querySelectorAll('.autocomplete-suggestion');
+            suggestions.forEach((suggestion, index) => {
+                suggestion.classList.toggle('selected', index === selectedSuggestionIndex);
+            });
+        }
+        
+        function selectSuggestion(value) {
+            const input = document.getElementById('location-guess-input');
+            input.value = value;
+            hideSuggestions();
+            input.focus();
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            populateLocationsList(locations); // Default to locations
+            initializeAutocomplete();
+        });
 
         function showScreen(screenId) {
             document.querySelectorAll('.screen').forEach(screen => {
@@ -1238,24 +1370,39 @@
         }
 
         function showImposterGuess() {
-            updateImposterModalLocations();
-            
             // Update modal text based on game type
             const modalText = document.getElementById('imposter-modal-text');
             const guessLabel = document.getElementById('imposter-guess-label');
+            const guessHint = document.getElementById('imposter-guess-hint');
+            const input = document.getElementById('location-guess-input');
             
             if (currentGameType === 'nba') {
                 modalText.textContent = "You're revealing as the imposter. Which NBA player do you think it is?";
                 guessLabel.textContent = 'NBA Player Guess:';
+                guessHint.textContent = 'Start typing an NBA player name...';
+                input.placeholder = 'Type NBA player name...';
             } else if (currentGameType === 'rapper') {
                 modalText.textContent = "You're revealing as the imposter. Which rapper do you think it is?";
                 guessLabel.textContent = 'Rapper Guess:';
+                guessHint.textContent = 'Start typing a rapper name...';
+                input.placeholder = 'Type rapper name...';
             } else {
                 modalText.textContent = "You're revealing as the imposter. What location do you think it is?";
                 guessLabel.textContent = 'Location Guess:';
+                guessHint.textContent = 'Start typing a location...';
+                input.placeholder = 'Type location name...';
             }
             
+            // Clear the input
+            input.value = '';
+            hideSuggestions();
+            
             showModal('imposter-modal');
+            
+            // Focus the input after modal is shown
+            setTimeout(() => {
+                input.focus();
+            }, 100);
         }
 
         // The Mole functions (unchanged)
@@ -1310,11 +1457,11 @@
         }
 
         function submitImposterReveal() {
-            const locationGuess = document.getElementById('location-guess').value;
+            const locationGuess = document.getElementById('location-guess-input').value.trim();
             if (!locationGuess) {
                 const itemType = currentGameType === 'nba' ? 'player' : 
                                 currentGameType === 'rapper' ? 'rapper' : 'location';
-                showError(`Please select a ${itemType}`);
+                showError(`Please enter a ${itemType}`);
                 return;
             }
             
@@ -1444,11 +1591,9 @@
                 }
                 
                 showSuccess(`Custom locations set: ${customLocations.length} locations`);
-                updateImposterModalLocations();
             } else {
                 customLocations = [];
                 showSuccess('Using default locations');
-                updateImposterModalLocations();
             }
             
             hideCustomLocations();
