@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🕵️ The Mole - Multiplayer</title>
+    <title>🎮 Game Collection - Multiplayer</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         * {
@@ -343,7 +343,6 @@
             border: 1px solid #27ae60;
         }
 
-        /* NEW: Bot controls styling */
         .bot-controls {
             background: rgba(22, 160, 133, 0.2);
             border: 2px solid #1abc9c;
@@ -541,6 +540,54 @@
             color: #3498db !important;
         }
 
+        /* NEW: Game selection styles */
+        .game-selection {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+
+        .game-option {
+            background: rgba(15, 52, 96, 0.8);
+            border-radius: 15px;
+            padding: 2rem;
+            text-align: center;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .game-option:hover {
+            transform: translateY(-5px);
+            border-color: rgba(52, 152, 219, 0.6);
+            box-shadow: 0 10px 30px rgba(52, 152, 219, 0.3);
+        }
+
+        .game-option h3 {
+            font-size: 1.8rem;
+            margin-bottom: 1rem;
+            color: #3498db;
+        }
+
+        .game-option p {
+            margin-bottom: 1.5rem;
+            opacity: 0.8;
+        }
+
+        .game-option .emoji {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        /* Hint section styles */
+        .hint-section {
+            background: rgba(26, 26, 46, 0.8);
+            padding: 1.5rem;
+            border-radius: 10px;
+            margin: 1rem 0;
+        }
+
         @media (max-width: 768px) {
             .title {
                 font-size: 2rem;
@@ -558,18 +605,58 @@
                 flex-direction: column;
                 gap: 0.5rem;
             }
+
+            .game-selection {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1 class="title">🕵️ THE MOLE - Multiplayer</h1>
+        <h1 class="title">🎮 GAME COLLECTION - Multiplayer</h1>
+
+        <!-- NEW: Game Selection Screen -->
+        <div id="game-selection-screen" class="screen active">
+            <div class="card">
+                <h2>Choose Your Game</h2>
+                <p>Select which game you'd like to play with your friends!</p>
+                
+                <div class="input-group">
+                    <label>Your Name:</label>
+                    <input type="text" id="global-player-name" placeholder="Enter your name" maxlength="20">
+                </div>
+
+                <div class="game-selection">
+                    <div class="game-option" onclick="selectGame('mole')">
+                        <div class="emoji">🕵️</div>
+                        <h3>The Mole</h3>
+                        <p>Find the imposter among locations. Ask questions and vote out the mole!</p>
+                        <button class="btn btn-primary">Play The Mole</button>
+                    </div>
+
+                    <div class="game-option" onclick="selectGame('nba')">
+                        <div class="emoji">🏀</div>
+                        <h3>NBA Imposter</h3>
+                        <p>Guess NBA players by giving hints. Find who doesn't belong!</p>
+                        <button class="btn btn-primary">Play NBA Imposter</button>
+                    </div>
+
+                    <div class="game-option" onclick="selectGame('rapper')">
+                        <div class="emoji">🎤</div>
+                        <h3>Rapper Imposter</h3>
+                        <p>Guess rappers by giving hints. Find who doesn't know the artist!</p>
+                        <button class="btn btn-primary">Play Rapper Imposter</button>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Home Screen -->
-        <div id="home-screen" class="screen active">
+        <div id="home-screen" class="screen">
             <div class="card">
-                <h2>Welcome to The Mole!</h2>
-                <p>Find the imposter among your friends in this exciting deduction game.</p>
+                <h2 id="game-title">Welcome to The Game!</h2>
+                <p id="game-description">Game description</p>
                 
                 <div class="input-group">
                     <label>Your Name:</label>
@@ -579,6 +666,7 @@
                 <div style="text-align: center;">
                     <button class="btn btn-primary" onclick="createRoom()">🎮 Create Room</button>
                     <button class="btn btn-warning" onclick="showJoinRoom()">🚪 Join Room</button>
+                    <button class="btn btn-secondary" onclick="backToGameSelection()">← Back to Game Selection</button>
                 </div>
 
                 <div id="join-room-section" style="display: none; margin-top: 1rem;">
@@ -590,8 +678,8 @@
                 </div>
             </div>
 
-            <div class="card">
-                <h3>📍 Possible Locations:</h3>
+            <div class="card" id="locations-card">
+                <h3 id="items-title">📍 Possible Locations:</h3>
                 <div class="locations-grid" id="locations-list"></div>
             </div>
         </div>
@@ -607,8 +695,8 @@
                 </div>
                 <div id="lobby-players" class="players-list"></div>
                 
-                <!-- NEW: Bot Controls Section -->
-                <div id="bot-controls" class="bot-controls">
+                <!-- Bot Controls Section (only for The Mole) -->
+                <div id="bot-controls" class="bot-controls" style="display: none;">
                     <h3>🤖 Bot Management</h3>
                     <div class="bot-status">
                         <span>Bots in room: <strong id="bot-count">0</strong></span>
@@ -628,6 +716,7 @@
                     <button id="lock-btn" class="btn btn-secondary" onclick="toggleLock()" style="display: none;">🔒 Lock Room</button>
                     <button id="custom-locations-btn" class="btn btn-info" onclick="showCustomLocations()" style="display: none;">🎯 Custom Locations</button>
                     <button class="btn btn-info" onclick="showScoreboard()">📊 Scoreboard</button>
+                    <button class="btn btn-secondary" onclick="backToGameSelection()">← Back to Game Selection</button>
                 </div>
             </div>
 
@@ -645,7 +734,8 @@
                 <div class="info-card">
                     <h3>Game Status</h3>
                     <p>Round: <span id="current-round">1</span></p>
-                    <p>Questions: <span id="questions-count">0/5</span></p>
+                    <p id="questions-display">Questions: <span id="questions-count">0/5</span></p>
+                    <p id="hints-display" style="display: none;">Hints: <span id="hints-count">0/5</span></p>
                     <p>Turn: <span id="current-turn">-</span></p>
                 </div>
                 
@@ -654,15 +744,16 @@
                     <div id="game-players" class="players-list"></div>
                 </div>
 
-                <div class="info-card">
-                    <h3>📍 Possible Locations</h3>
+                <div class="info-card" id="game-locations-card">
+                    <h3 id="game-items-title">📍 Possible Locations</h3>
                     <div id="game-locations-list" class="locations-grid"></div>
                 </div>
             </div>
 
             <div id="role-display" class="role-display"></div>
 
-            <div class="question-section">
+            <!-- Question Section (The Mole only) -->
+            <div class="question-section" id="question-section">
                 <h3>❓ Current Question</h3>
                 <div id="current-question" style="margin: 1rem 0; font-style: italic;">Waiting for question...</div>
                 
@@ -681,6 +772,24 @@
 
                 <div id="imposter-reveal-section" style="display: none;">
                     <button class="btn btn-danger" onclick="showImposterReveal()">🎭 Reveal as Imposter</button>
+                </div>
+            </div>
+
+            <!-- Hint Section (NBA/Rapper Imposter only) -->
+            <div class="hint-section" id="hint-section" style="display: none;">
+                <h3 id="hint-title">💡 Give a Hint</h3>
+                <div id="current-hint-display" style="margin: 1rem 0; font-style: italic;">Waiting for hints...</div>
+                
+                <div id="give-hint-section" style="display: none;">
+                    <div class="input-group">
+                        <label id="hint-label">Your Hint:</label>
+                        <textarea id="hint-input" rows="3" placeholder="Give a hint about your player..."></textarea>
+                    </div>
+                    <button id="give-hint-btn" class="btn btn-primary" onclick="giveHint()">💡 Give Hint</button>
+                </div>
+
+                <div id="imposter-guess-section" style="display: none;">
+                    <button class="btn btn-danger" onclick="showImposterGuess()">🎭 Guess as Imposter</button>
                 </div>
             </div>
 
@@ -730,12 +839,26 @@
         </div>
     </div>
 
+    <!-- NEW: Hint turn modal -->
+    <div id="hint-turn-modal" class="modal">
+        <div class="modal-content">
+            <h3>Your Turn!</h3>
+            <p>It's your turn to give a hint about your player.</p>
+            <div class="input-group">
+                <label>Your Hint:</label>
+                <textarea id="hint-turn-input" rows="4" placeholder="Give a hint about your player..."></textarea>
+            </div>
+            <button class="btn btn-primary" onclick="submitHintFromModal()">Submit Hint</button>
+            <button class="btn btn-secondary" onclick="hideModal('hint-turn-modal')">✕ Close</button>
+        </div>
+    </div>
+
     <div id="imposter-modal" class="modal">
         <div class="modal-content">
             <h3>🎭 Imposter Reveal!</h3>
-            <p>You're revealing as the imposter. What location do you think it is?</p>
+            <p id="imposter-modal-text">You're revealing as the imposter. What location do you think it is?</p>
             <div class="input-group">
-                <label>Location Guess:</label>
+                <label id="imposter-guess-label">Location Guess:</label>
                 <select id="location-guess">
                     <option value="">Select location</option>
                 </select>
@@ -811,8 +934,9 @@
         let hasClickedReadyToVote = false;
         let customLocations = [];
         let isRoomLocked = false;
-        let botCount = 0; // NEW: Track bot count
-        let usingCustomLocations = false; // NEW: Track if using custom locations
+        let botCount = 0;
+        let usingCustomLocations = false;
+        let currentGameType = ''; // NEW: Track current game type
 
         const locations = [
             "Circus", "Amusement Park", "Crashing Airplane", "Titanic",
@@ -822,15 +946,102 @@
             "High School", "Haunted Mansion", "Beach"
         ];
 
-        document.addEventListener('DOMContentLoaded', () => {
+        // NEW: Player lists for new games
+        const nbaPlayers = ["Lebron James", "Kawhi Leonard", "Steph Curry", "Klay Thompson", "Damian Lillard", "Giannis Antetokounmpo", 
+            "Chris Paul", "Zion Williamson", "Ja Morant", "Scottie Barnes", "Chet Holmgren", "Paolo Banchero", 
+            "Franz Wagner", "Gradey Dick", "Kyle Lowry", "DeMar DeRozan", "CJ McCollum", "Anthony Davis", 
+            "Fred VanVleet", "Miles Bridges", "James Harden", "Russell Westbrook", "Joel Embiid", "Tyrese Maxey", 
+            "Mikal Bridges", "Jalen Brunson", "Julius Randle", "OG Anunoby", "Mitchell Robinson", "Kelly Oubre Jr.", 
+            "Donte DiVincenzo", "Josh Hart", "Immanuel Quickley", "RJ Barrett", "Jakob Poeltl", "Cam Thomas", 
+            "Ben Simmons", "Nic Claxton", "Spencer Dinwiddie", "Jayson Tatum", "Jaylen Brown", "Derrick White", 
+            "Jrue Holiday", "Kristaps Porzingis", "Al Horford", "Gary Trent Jr.", "Brook Lopez", "Khris Middleton", 
+            "Bobby Portis", "Tyrese Haliburton", "Pascal Siakam", "Myles Turner", "Bennedict Mathurin", "Obi Toppin", 
+            "Darius Garland", "Donovan Mitchell", "Evan Mobley", "Jarrett Allen", "DeMar DeRozan", "Zach LaVine", 
+            "Nikola Vucevic", "Josh Giddey", "Cade Cunningham", "Jaden Ivey", "Ausar Thompson", "Jalen Duren", 
+            "Tobias Harris", "Jimmy Butler", "Bam Adebayo", "Terry Rozier", "Tyler Herro", "Duncan Robinson", 
+            "Trae Young", "Clint Capela", "Zaccharie Risacher", "LaMelo Ball", "Miles Bridges", "Brandon Miller", 
+            "Grant Williams", "Seth Curry", "Kyle Kuzma", "Jordan Poole", "Alex Sarr", "Shai Gilgeous-Alexander", 
+            "Jalen Williams", "Lu Dort", "Alex Caruso", "Nikola Jokic", "Jamal Murray", "Michael Porter Jr.", 
+            "Aaron Gordon", "Bruce Brown", "Anthony Edwards", "Mike Conley", "Rudy Gobert", "Karl-Anthony Towns", 
+            "Jaden McDaniels", "Naz Reid", "Norman Powell", "Luka Doncic", "Kyrie Irving", "Daniel Gafford", 
+            "Kevin Durant", "Devin Booker", "Bradley Beal", "Jusuf Nurkic", "Brandon Ingram", "Dejounte Murray", 
+            "Herbert Jones", "D'Angelo Russell", "Austin Reaves", "De'Aaron Fox", "Domantas Sabonis", 
+            "Malik Monk", "Buddy Hield", "Andrew Wiggins", "Draymond Green", "Jonathan Kuminga", 
+            "Alperen Sengun", "Jalen Green", "Amen Thompson", "Dillon Brooks", "Collin Sexton", "Isaiah Stewart", 
+            "Lauri Markkanen", "Walker Kessler", "Jordan Clarkson", "Jaren Jackson Jr.", "Desmond Bane", 
+            "Marcus Smart", "Zach Edey", "Victor Wembanyama", "Keldon Johnson", "Devin Vassell", "Jeremy Sochan", 
+            "Chris Paul", "Anfernee Simons", "Scoot Henderson", "Deandre Ayton", "Jerami Grant", "Shaedon Sharpe", 
+            "Deni Avdija", "Cooper Flagg"];
+
+        const rappers = ["Drake", "Future", "21 Savage", "Travis Scott", "Kanye", "XXXTentacion", "Nav", "Roddy Ricch", "A Boogie wit da Hoodie", 
+            "Post Malone", "Lil Baby", "Lil Wayne", "Baby Keem", "Kendrick Lamar", "Lil Tecca", "Don Toliver", "Chris Brown", 
+            "Coi Leray", "Nicki Minaj", "Cardi B", "DaBaby", "J. Cole", "Eminem", "Gunna", "Quavo", "Jay-Z", "Juice WRLD", "Big Black Banana Man", 
+            "The Weeknd", "Kid Cudi", "Kodak Black", "Lil Durk", "Lil Skies", "Lil Tjay", "Lil Uzi Vert", "Meek Mill", "Nas", "PARTYNEXTDOOR",
+            "Offset", "PARTYNEXTDOOR", "Playboi Carti", "Polo G", "Pop Smoke", "Swae Lee", "Tory Lanez", "Young Thug", "Ty Dolla $ign", "Nicki Minaj"];
+
+        // NEW: Game selection function
+        function selectGame(gameType) {
+            const globalName = document.getElementById('global-player-name').value.trim();
+            if (!globalName) {
+                showError('Please enter your name first');
+                return;
+            }
+
+            currentGameType = gameType;
+            document.getElementById('player-name').value = globalName;
+            
+            // Update UI based on game type
+            if (gameType === 'mole') {
+                document.getElementById('game-title').textContent = '🕵️ The Mole';
+                document.getElementById('game-description').textContent = 'Find the imposter among your friends in this exciting deduction game.';
+                document.getElementById('items-title').textContent = '📍 Possible Locations:';
+                populateLocationsList(locations);
+            } else if (gameType === 'nba') {
+                document.getElementById('game-title').textContent = '🏀 NBA Imposter';
+                document.getElementById('game-description').textContent = 'Give hints about NBA players and find the imposter!';
+                document.getElementById('items-title').textContent = '🏀 NBA Players:';
+                populateLocationsList(nbaPlayers);
+            } else if (gameType === 'rapper') {
+                document.getElementById('game-title').textContent = '🎤 Rapper Imposter';
+                document.getElementById('game-description').textContent = 'Give hints about rappers and find the imposter!';
+                document.getElementById('items-title').textContent = '🎤 Rappers:';
+                populateLocationsList(rappers);
+            }
+
+            showScreen('home-screen');
+        }
+
+        function backToGameSelection() {
+            currentGameType = '';
+            currentRoom = '';
+            isHost = false;
+            playerName = '';
+            actualPlayerName = '';
+            isReady = false;
+            hasClickedReadyToVote = false;
+            
+            // Reset global name from current name
+            const currentName = document.getElementById('player-name').value;
+            if (currentName) {
+                document.getElementById('global-player-name').value = currentName;
+            }
+            
+            showScreen('game-selection-screen');
+        }
+
+        function populateLocationsList(items) {
             const locationsList = document.getElementById('locations-list');
-            locations.forEach(location => {
+            locationsList.innerHTML = '';
+            items.forEach(item => {
                 const div = document.createElement('div');
                 div.className = 'location-item';
-                div.textContent = location;
+                div.textContent = item;
                 locationsList.appendChild(div);
             });
+        }
 
+        document.addEventListener('DOMContentLoaded', () => {
+            populateLocationsList(locations); // Default to locations
             updateImposterModalLocations();
         });
 
@@ -838,11 +1049,19 @@
             const locationGuessSelect = document.getElementById('location-guess');
             locationGuessSelect.innerHTML = '<option value="">Select location</option>';
             
-            const locationsToUse = customLocations.length > 0 ? customLocations : locations;
-            locationsToUse.forEach(location => {
+            let itemsToUse = locations;
+            if (currentGameType === 'nba') {
+                itemsToUse = nbaPlayers;
+            } else if (currentGameType === 'rapper') {
+                itemsToUse = rappers;
+            } else if (customLocations.length > 0) {
+                itemsToUse = customLocations;
+            }
+            
+            itemsToUse.forEach(item => {
                 const option = document.createElement('option');
-                option.value = location;
-                option.textContent = location;
+                option.value = item;
+                option.textContent = item;
                 locationGuessSelect.appendChild(option);
             });
         }
@@ -868,7 +1087,7 @@
                 showError('Please enter your name');
                 return;
             }
-            socket.emit('create_room', playerName);
+            socket.emit('create_room', { playerName, gameType: currentGameType });
         }
 
         function showJoinRoom() {
@@ -884,7 +1103,7 @@
                 return;
             }
             
-            socket.emit('join_room', { roomCode, playerName });
+            socket.emit('join_room', { roomCode, playerName, gameType: currentGameType });
         }
 
         function toggleReady() {
@@ -904,14 +1123,13 @@
             }
         }
 
-        // NEW: Bot management functions
+        // Bot management functions (only for The Mole)
         function addBot() {
             if (!isHost) {
                 showError('Only the host can add bots');
                 return;
             }
             
-            // Get current total player count
             const totalPlayers = document.querySelectorAll('.player-card').length;
             
             if (totalPlayers >= 8) {
@@ -939,7 +1157,6 @@
             if (!isHost) return;
             
             if (confirm('Are you sure you want to remove all bots?')) {
-                // Get all bot IDs and remove them one by one
                 const players = document.querySelectorAll('.player-card.bot');
                 players.forEach(playerCard => {
                     const kickBtn = playerCard.querySelector('.kick-btn');
@@ -952,52 +1169,96 @@
 
         function updateBotControls() {
             const botControls = document.getElementById('bot-controls');
+            
+            // Only show bot controls for The Mole game
+            if (currentGameType !== 'mole' || !isHost) {
+                botControls.style.display = 'none';
+                return;
+            }
+            
             const botCountSpan = document.getElementById('bot-count');
             const addBotBtn = document.getElementById('add-bot-btn');
             const removeAllBotsBtn = document.getElementById('remove-all-bots-btn');
             const botWarning = document.getElementById('bot-warning');
             
-            if (isHost) {
-                botControls.style.display = 'block';
-                botCountSpan.textContent = botCount;
-                
-                // Get total player count from the lobby
-                const totalPlayers = document.querySelectorAll('.player-card').length;
-                
-                // Show/hide add bot button based on conditions
-                const canAddBot = totalPlayers < 8 && !usingCustomLocations;
-                addBotBtn.style.display = 'inline-block'; // Always show the button
-                addBotBtn.disabled = !canAddBot;
-                
-                // Update button text based on state
-                if (totalPlayers >= 8) {
-                    addBotBtn.textContent = '🤖 Room Full (8/8)';
-                } else if (usingCustomLocations) {
-                    addBotBtn.textContent = '🤖 Disabled (Custom Locations)';
-                } else {
-                    addBotBtn.textContent = `🤖 Add Bot (${totalPlayers}/8)`;
-                }
-                
-                // Show/hide remove all bots button
-                removeAllBotsBtn.style.display = botCount > 0 ? 'inline-block' : 'none';
-                
-                // Show warning if using custom locations
-                botWarning.style.display = usingCustomLocations ? 'block' : 'none';
+            botControls.style.display = 'block';
+            botCountSpan.textContent = botCount;
+            
+            const totalPlayers = document.querySelectorAll('.player-card').length;
+            
+            const canAddBot = totalPlayers < 8 && !usingCustomLocations;
+            addBotBtn.style.display = 'inline-block';
+            addBotBtn.disabled = !canAddBot;
+            
+            if (totalPlayers >= 8) {
+                addBotBtn.textContent = '🤖 Room Full (8/8)';
+            } else if (usingCustomLocations) {
+                addBotBtn.textContent = '🤖 Disabled (Custom Locations)';
             } else {
-                botControls.style.display = 'none';
+                addBotBtn.textContent = `🤖 Add Bot (${totalPlayers}/8)`;
             }
+            
+            removeAllBotsBtn.style.display = botCount > 0 ? 'inline-block' : 'none';
+            botWarning.style.display = usingCustomLocations ? 'block' : 'none';
         }
 
         function startGame() {
             if (!isHost) return;
             
             if (customLocations.length > 0) {
-                socket.emit('start_game', { customLocations });
+                socket.emit('start_game', { customLocations, gameType: currentGameType });
             } else {
-                socket.emit('start_game');
+                socket.emit('start_game', { gameType: currentGameType });
             }
         }
 
+        // NEW: Hint functions for NBA/Rapper games
+        function giveHint() {
+            const hint = document.getElementById('hint-input').value.trim();
+            if (!hint) {
+                showError('Please provide a hint');
+                return;
+            }
+
+            socket.emit('give_hint', { hint });
+            document.getElementById('hint-input').value = '';
+            document.getElementById('give-hint-section').style.display = 'none';
+        }
+
+        function submitHintFromModal() {
+            const hint = document.getElementById('hint-turn-input').value.trim();
+            if (!hint) {
+                showError('Please provide a hint');
+                return;
+            }
+
+            socket.emit('give_hint', { hint });
+            document.getElementById('hint-turn-input').value = '';
+            hideModal('hint-turn-modal');
+        }
+
+        function showImposterGuess() {
+            updateImposterModalLocations();
+            
+            // Update modal text based on game type
+            const modalText = document.getElementById('imposter-modal-text');
+            const guessLabel = document.getElementById('imposter-guess-label');
+            
+            if (currentGameType === 'nba') {
+                modalText.textContent = "You're revealing as the imposter. Which NBA player do you think it is?";
+                guessLabel.textContent = 'NBA Player Guess:';
+            } else if (currentGameType === 'rapper') {
+                modalText.textContent = "You're revealing as the imposter. Which rapper do you think it is?";
+                guessLabel.textContent = 'Rapper Guess:';
+            } else {
+                modalText.textContent = "You're revealing as the imposter. What location do you think it is?";
+                guessLabel.textContent = 'Location Guess:';
+            }
+            
+            showModal('imposter-modal');
+        }
+
+        // The Mole functions (unchanged)
         function askQuestion() {
             const targetId = document.getElementById('target-select').value;
             if (!targetId) {
@@ -1045,30 +1306,51 @@
         }
 
         function showImposterReveal() {
-            updateImposterModalLocations();
-            showModal('imposter-modal');
+            showImposterGuess(); // Use the same modal
         }
 
         function submitImposterReveal() {
             const locationGuess = document.getElementById('location-guess').value;
             if (!locationGuess) {
-                showError('Please select a location');
+                const itemType = currentGameType === 'nba' ? 'player' : 
+                                currentGameType === 'rapper' ? 'rapper' : 'location';
+                showError(`Please select a ${itemType}`);
                 return;
             }
             
-            socket.emit('imposter_reveal', { locationGuess });
+            if (currentGameType === 'mole') {
+                socket.emit('imposter_reveal', { locationGuess });
+            } else {
+                socket.emit('imposter_guess', { guess: locationGuess });
+            }
             hideModal('imposter-modal');
         }
 
         function updateGameLocations() {
             const gameLocationsList = document.getElementById('game-locations-list');
+            const gameItemsTitle = document.getElementById('game-items-title');
+            
             gameLocationsList.innerHTML = '';
             
-            const locationsToShow = customLocations.length > 0 ? customLocations : locations;
-            locationsToShow.forEach(location => {
+            let itemsToShow = locations;
+            let titleText = '📍 Possible Locations';
+            
+            if (currentGameType === 'nba') {
+                itemsToShow = nbaPlayers;
+                titleText = '🏀 NBA Players';
+            } else if (currentGameType === 'rapper') {
+                itemsToShow = rappers;
+                titleText = '🎤 Rappers';
+            } else if (customLocations.length > 0) {
+                itemsToShow = customLocations;
+            }
+            
+            gameItemsTitle.textContent = titleText;
+            
+            itemsToShow.forEach(item => {
                 const div = document.createElement('div');
                 div.className = 'location-item';
-                div.textContent = location;
+                div.textContent = item;
                 gameLocationsList.appendChild(div);
             });
         }
@@ -1194,6 +1476,7 @@
             isHost = data.isHost;
             actualPlayerName = data.actualName;
             playerName = actualPlayerName;
+            currentGameType = data.gameType;
             document.getElementById('room-display').textContent = currentRoom;
             showScreen('lobby-screen');
             showSuccess(`Room created! Code: ${currentRoom}`);
@@ -1204,6 +1487,7 @@
             isHost = data.isHost;
             actualPlayerName = data.actualName;
             playerName = actualPlayerName;
+            currentGameType = data.gameType;
             document.getElementById('room-display').textContent = currentRoom;
             showScreen('lobby-screen');
             showSuccess(`Joined room: ${currentRoom}`);
@@ -1220,14 +1504,10 @@
 
         socket.on('kicked', (data) => {
             showError(data.message);
-            showScreen('home-screen');
-            currentRoom = '';
-            isHost = false;
-            playerName = '';
-            actualPlayerName = '';
+            backToGameSelection();
         });
 
-        // NEW: Bot event handlers
+        // Bot event handlers (The Mole only)
         socket.on('bot_added', (data) => {
             showSuccess(`Bot ${data.botName} added to the room`);
             botCount = data.botCount;
@@ -1276,6 +1556,9 @@
             if (data.hasOwnProperty('usingCustomLocations')) {
                 usingCustomLocations = data.usingCustomLocations;
             }
+            if (data.hasOwnProperty('gameType')) {
+                currentGameType = data.gameType;
+            }
             updateBotControls();
         });
 
@@ -1297,6 +1580,7 @@
         socket.on('game_started', (data) => {
             gameState = data;
             hasClickedReadyToVote = false;
+            currentGameType = data.gameType;
             
             if (data.scoreboard) {
                 scoreboardData = data.scoreboard;
@@ -1309,8 +1593,29 @@
             if (data.isImposter) {
                 addToLog('🎭 You are the IMPOSTER!');
             } else {
-                addToLog(`📍 Location: ${data.playerRole}`);
+                if (currentGameType === 'mole') {
+                    addToLog(`📍 Location: ${data.playerRole}`);
+                } else {
+                    addToLog(`👤 Your ${currentGameType === 'nba' ? 'NBA Player' : 'Rapper'}: ${data.playerRole}`);
+                }
             }
+        });
+
+        // NEW: Hint given event for NBA/Rapper games
+        socket.on('hint_given', (data) => {
+            const hintText = `💡 ${data.player}: "${data.hint}"`;
+            document.getElementById('current-hint-display').innerHTML = hintText;
+            addToLog(hintText);
+            
+            gameState.hintsThisRound = data.hintsThisRound;
+            gameState.currentTurn = data.currentTurn;
+            updateGameDisplay();
+        });
+
+        // NEW: Your turn event for hint games
+        socket.on('your_hint_turn', () => {
+            showModal('hint-turn-modal');
+            document.getElementById('hint-turn-input').focus();
         });
 
         socket.on('question_asked', (data) => {
@@ -1455,7 +1760,7 @@
                 
                 startBtn.style.display = (allHumansReady && hasEnoughPlayers) ? 'inline-block' : 'none';
                 lockBtn.style.display = 'inline-block';
-                customLocationsBtn.style.display = 'inline-block';
+                customLocationsBtn.style.display = currentGameType === 'mole' ? 'inline-block' : 'none';
                 readyBtn.style.display = 'none';
             } else {
                 const currentPlayer = players.find(p => p.name === actualPlayerName);
@@ -1507,8 +1812,19 @@
             if (!gameState.playerOrder) return;
 
             document.getElementById('current-round').textContent = gameState.currentRound || 1;
-            document.getElementById('questions-count').textContent = 
-                `${gameState.questionsThisRound || 0}/${gameState.questionsPerRound || 5}`;
+            
+            // Update question/hint count display based on game type
+            if (currentGameType === 'mole') {
+                document.getElementById('questions-display').style.display = 'block';
+                document.getElementById('hints-display').style.display = 'none';
+                document.getElementById('questions-count').textContent = 
+                    `${gameState.questionsThisRound || 0}/${gameState.questionsPerRound || 5}`;
+            } else {
+                document.getElementById('questions-display').style.display = 'none';
+                document.getElementById('hints-display').style.display = 'block';
+                document.getElementById('hints-count').textContent = 
+                    `${gameState.hintsThisRound || 0}/${gameState.hintsPerRound || gameState.playerOrder.length}`;
+            }
             
             const currentPlayerIndex = gameState.currentTurn || 0;
             const currentPlayer = gameState.playerOrder[currentPlayerIndex];
@@ -1517,12 +1833,25 @@
             const roleDisplay = document.getElementById('role-display');
             if (gameState.isImposter) {
                 roleDisplay.className = 'role-display role-imposter';
-                roleDisplay.innerHTML = '🎭 You are the IMPOSTER!<br>Find out the location!';
-                document.getElementById('imposter-reveal-section').style.display = 'block';
+                if (currentGameType === 'mole') {
+                    roleDisplay.innerHTML = '🎭 You are the IMPOSTER!<br>Find out the location!';
+                } else {
+                    const itemType = currentGameType === 'nba' ? 'NBA player' : 'rapper';
+                    roleDisplay.innerHTML = `🎭 You are the IMPOSTER!<br>Find out the ${itemType}!`;
+                }
+                document.getElementById('imposter-reveal-section').style.display = currentGameType === 'mole' ? 'block' : 'none';
+                document.getElementById('imposter-guess-section').style.display = currentGameType !== 'mole' ? 'block' : 'none';
             } else if (gameState.playerRole) {
                 roleDisplay.className = 'role-display role-location';
-                roleDisplay.innerHTML = `📍 Location: <strong>${gameState.playerRole}</strong><br>Find the imposter!`;
+                if (currentGameType === 'mole') {
+                    roleDisplay.innerHTML = `📍 Location: <strong>${gameState.playerRole}</strong><br>Find the imposter!`;
+                } else {
+                    const icon = currentGameType === 'nba' ? '🏀' : '🎤';
+                    const itemType = currentGameType === 'nba' ? 'NBA Player' : 'Rapper';
+                    roleDisplay.innerHTML = `${icon} Your ${itemType}: <strong>${gameState.playerRole}</strong><br>Find the imposter!`;
+                }
                 document.getElementById('imposter-reveal-section').style.display = 'none';
+                document.getElementById('imposter-guess-section').style.display = 'none';
             }
 
             const playersContainer = document.getElementById('game-players');
@@ -1538,6 +1867,56 @@
                 playersContainer.appendChild(div);
             });
 
+            // Show/hide appropriate sections based on game type
+            const questionSection = document.getElementById('question-section');
+            const hintSection = document.getElementById('hint-section');
+            
+            if (currentGameType === 'mole') {
+                questionSection.style.display = 'block';
+                hintSection.style.display = 'none';
+                updateMoleGameSection();
+            } else {
+                questionSection.style.display = 'none';
+                hintSection.style.display = 'block';
+                updateHintGameSection();
+            }
+
+            const readyToVoteSection = document.getElementById('ready-to-vote-section');
+            const readyCountDisplay = document.getElementById('ready-count-display');
+            const requiredCountSpan = document.getElementById('required-count');
+            const readyToVoteBtn = document.getElementById('ready-to-vote-btn');
+
+            const hintsOrQuestions = currentGameType === 'mole' ? 
+                gameState.questionsThisRound : gameState.hintsThisRound;
+            const hintsOrQuestionsPerRound = currentGameType === 'mole' ? 
+                gameState.questionsPerRound : gameState.hintsPerRound;
+
+            if (gameState.status === 'playing' && hintsOrQuestions >= hintsOrQuestionsPerRound) {
+                readyToVoteSection.style.display = 'block';
+                
+                const readyCount = gameState.readyToVoteCount || 0;
+                const requiredCount = (gameState.playerOrder?.length || 2) - 1;
+                
+                readyCountDisplay.textContent = `${readyCount}/${requiredCount} players ready`;
+                requiredCountSpan.textContent = requiredCount;
+                
+                if (hasClickedReadyToVote) {
+                    readyToVoteBtn.textContent = 'Ready! Waiting for others...';
+                    readyToVoteBtn.disabled = true;
+                    readyToVoteBtn.className = 'btn btn-primary';
+                } else {
+                    readyToVoteBtn.textContent = "I'm Ready to Vote!";
+                    readyToVoteBtn.disabled = false;
+                    readyToVoteBtn.className = 'btn btn-warning';
+                }
+            } else {
+                readyToVoteSection.style.display = 'none';
+            }
+
+            updateGameScoreboard();
+        }
+
+        function updateMoleGameSection() {
             const targetSelect = document.getElementById('target-select');
             targetSelect.innerHTML = '<option value="">Select player to ask</option>';
             
@@ -1566,35 +1945,27 @@
             } else {
                 document.getElementById('question-status').style.display = 'none';
             }
+        }
 
-            const readyToVoteSection = document.getElementById('ready-to-vote-section');
-            const readyCountDisplay = document.getElementById('ready-count-display');
-            const requiredCountSpan = document.getElementById('required-count');
-            const readyToVoteBtn = document.getElementById('ready-to-vote-btn');
-
-            if (gameState.status === 'playing' && gameState.questionsThisRound >= gameState.questionsPerRound) {
-                readyToVoteSection.style.display = 'block';
-                
-                const readyCount = gameState.readyToVoteCount || 0;
-                const requiredCount = (gameState.playerOrder?.length || 2) - 1;
-                
-                readyCountDisplay.textContent = `${readyCount}/${requiredCount} players ready`;
-                requiredCountSpan.textContent = requiredCount;
-                
-                if (hasClickedReadyToVote) {
-                    readyToVoteBtn.textContent = 'Ready! Waiting for others...';
-                    readyToVoteBtn.disabled = true;
-                    readyToVoteBtn.className = 'btn btn-primary';
-                } else {
-                    readyToVoteBtn.textContent = "I'm Ready to Vote!";
-                    readyToVoteBtn.disabled = false;
-                    readyToVoteBtn.className = 'btn btn-warning';
-                }
-            } else {
-                readyToVoteSection.style.display = 'none';
+        function updateHintGameSection() {
+            const giveHintSection = document.getElementById('give-hint-section');
+            const isMyTurn = gameState.playerOrder?.[gameState.currentTurn]?.isYou;
+            
+            giveHintSection.style.display = (isMyTurn && gameState.status === 'playing') ? 'block' : 'none';
+            
+            // Update hint title based on game type
+            const hintTitle = document.getElementById('hint-title');
+            const hintLabel = document.getElementById('hint-label');
+            
+            if (currentGameType === 'nba') {
+                hintTitle.textContent = '🏀 Give a Hint about your NBA Player';
+                hintLabel.textContent = 'Your hint about this NBA player:';
+                document.getElementById('hint-input').placeholder = 'Give a hint about your NBA player...';
+            } else if (currentGameType === 'rapper') {
+                hintTitle.textContent = '🎤 Give a Hint about your Rapper';
+                hintLabel.textContent = 'Your hint about this rapper:';
+                document.getElementById('hint-input').placeholder = 'Give a hint about your rapper...';
             }
-
-            updateGameScoreboard();
         }
 
         function updateGameScoreboard() {
@@ -1664,12 +2035,17 @@
             } else {
                 let html = '<div class="game-history">';
                 gameHistory.slice().reverse().forEach(game => {
+                    const gameTypeText = game.gameType === 'nba' ? 'NBA Imposter' : 
+                                        game.gameType === 'rapper' ? 'Rapper Imposter' : 'The Mole';
+                    const itemText = game.gameType === 'nba' ? 'Player' : 
+                                    game.gameType === 'rapper' ? 'Rapper' : 'Location';
+                    
                     html += `
                         <div class="history-item">
-                            <h4>Game #${game.gameNumber} - ${new Date(game.date).toLocaleString()}</h4>
-                            <p><strong>Location:</strong> ${game.location}</p>
+                            <h4>${gameTypeText} Game #${game.gameNumber} - ${new Date(game.date).toLocaleString()}</h4>
+                            <p><strong>${itemText}:</strong> ${game.location}</p>
                             <p><strong>Imposter:</strong> ${game.imposter}</p>
-                            <p><strong>Winner:</strong> ${game.winner === 'imposter_wins' ? 'Imposter' : 'Location Team'}</p>
+                            <p><strong>Winner:</strong> ${game.winner === 'imposter_wins' ? 'Imposter' : game.gameType === 'mole' ? 'Location Team' : 'Player Team'}</p>
                             <p><strong>Rounds:</strong> ${game.rounds}</p>
                             <details>
                                 <summary>Final Scores</summary>
@@ -1699,8 +2075,8 @@
                     html += `
                         <tr>
                             <td><span class="player-name ${playerClass}">${player.name}${player.isBot ? ' 🤖' : ''}</span></td>
-                            <td>${player.questionsAsked}</td>
-                            <td>${player.questionsAnswered}</td>
+                            <td>${player.questionsAsked || 0}</td>
+                            <td>${player.questionsAnswered || 0}</td>
                             <td>${voteAccuracy}% (${player.correctVotes}/${player.totalVotes})</td>
                             <td>${player.roundsSurvived}</td>
                         </tr>
@@ -1739,9 +2115,9 @@
             
             if (gameState.gameResult) {
                 resultDiv.innerHTML = `
-                    <div class="${gameState.gameResult.winner === 'location_wins' ? 'success' : 'error'}">
+                    <div class="${gameState.gameResult.winner === 'location_wins' || gameState.gameResult.winner === 'player_wins' ? 'success' : 'error'}">
                         <h3>${gameState.gameResult.message}</h3>
-                        <p>Location: ${gameState.gameResult.location}</p>
+                        <p>${currentGameType === 'mole' ? 'Location' : currentGameType === 'nba' ? 'NBA Player' : 'Rapper'}: ${gameState.gameResult.location}</p>
                         <p>Imposter: ${gameState.gameResult.imposter}</p>
                     </div>
                 `;
@@ -1750,12 +2126,20 @@
             if (gameState.gameHistory) {
                 let summaryHTML = '<h4>Game Summary:</h4>';
                 gameState.gameHistory.forEach(entry => {
-                    summaryHTML += `
-                        <div class="log-entry">
-                            <strong>${entry.asker}</strong> → <strong>${entry.target}</strong>: ${entry.question}<br>
-                            <em>${entry.answer}</em>
-                        </div>
-                    `;
+                    if (currentGameType === 'mole') {
+                        summaryHTML += `
+                            <div class="log-entry">
+                                <strong>${entry.asker}</strong> → <strong>${entry.target}</strong>: ${entry.question}<br>
+                                <em>${entry.answer}</em>
+                            </div>
+                        `;
+                    } else {
+                        summaryHTML += `
+                            <div class="log-entry">
+                                <strong>${entry.player}</strong>: ${entry.hint}
+                            </div>
+                        `;
+                    }
                 });
                 summaryDiv.innerHTML = summaryHTML;
             }
@@ -1808,6 +2192,8 @@
             if (e.key === 'Enter' && e.ctrlKey) {
                 if (document.getElementById('answer-modal').classList.contains('active')) {
                     submitAnswer();
+                } else if (document.getElementById('hint-turn-modal').classList.contains('active')) {
+                    submitHintFromModal();
                 }
             }
         });
