@@ -842,7 +842,6 @@
                 <div style="text-align: center;">
                     <button class="btn btn-primary" onclick="createRoom()">🎮 Create Room</button>
                     <button class="btn btn-warning" onclick="showJoinRoom()">🚪 Join Room</button>
-                    <button class="btn btn-info" onclick="showPublicLobbies()">🌐 Browse Public Lobbies</button>
                     <button class="btn btn-secondary" onclick="backToGameSelection()">← Back to Game Selection</button>
                 </div>
 
@@ -852,13 +851,12 @@
                         <input type="text" id="room-code" placeholder="Enter room code" maxlength="6">
                     </div>
                     <button class="btn btn-primary" onclick="joinRoom()">Join</button>
-                </div>
 
-                <!-- NEW: Public Lobbies Browser -->
-                <div id="public-lobbies-section" style="display: none; margin-top: 1rem;">
-                    <h3>🌐 Public Lobbies</h3>
-                    <div id="public-lobbies-list"></div>
-                    <button class="btn btn-secondary" onclick="hidePublicLobbies()">Close</button>
+                    <!-- Public Lobbies Browser -->
+                    <div id="public-lobbies-section" style="margin-top: 2rem;">
+                        <h3>🌐 Public Lobbies</h3>
+                        <div id="public-lobbies-list"></div>
+                    </div>
                 </div>
             </div>
 
@@ -1386,17 +1384,7 @@
 
         function showJoinRoom() {
             document.getElementById('join-room-section').style.display = 'block';
-            document.getElementById('public-lobbies-section').style.display = 'none';
-        }
-
-        function showPublicLobbies() {
-            socket.emit('request_public_lobbies');
-            document.getElementById('public-lobbies-section').style.display = 'block';
-            document.getElementById('join-room-section').style.display = 'none';
-        }
-
-        function hidePublicLobbies() {
-            document.getElementById('public-lobbies-section').style.display = 'none';
+            socket.emit('get_public_lobbies');
         }
 
         function joinPublicLobby(roomCode) {
@@ -1831,6 +1819,7 @@
         }
 
         function displayPublicLobbies(lobbies) {
+            console.log('Displaying public lobbies:', lobbies);
             const container = document.getElementById('public-lobbies-list');
             
             if (!lobbies || lobbies.length === 0) {
@@ -1920,6 +1909,7 @@
         });
 
         socket.on('public_lobbies', (data) => {
+            console.log('Received public lobbies:', data);
             publicLobbies = data;
             displayPublicLobbies(data);
         });
