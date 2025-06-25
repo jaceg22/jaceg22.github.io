@@ -12,6 +12,30 @@ const io = socketIo(server);
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Enhanced lobby endpoint to get public lobbies
+app.get('/api/public-lobbies', (req, res) => {
+    const publicLobbies = [];
+    
+    for (const [roomCode, room] of gameRooms.entries()) {
+        if (room.roomType === 'public' && room.gameState.status === 'waiting') {
+            publicLobbies.push({
+                roomCode: room.roomCode,
+                gameType: room.gameType,
+                playerCount: room.players.size,
+                maxPlayers: 8,
+                hostName: Array.from(room.players.values()).find(p => p.isHost)?.name || 'Unknown',
+                usingCustomLocations: room.customLocations.length > 0,
+                botCount: room.bots.size,
+                createdAt: room.createdAt
+            });
+        }
+    }
+    
+    // Sort by creation time (newest first) and limit to 10
+    publicLobbies.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    res.json(publicLobbies.slice(0, 10));
+});
+
 app.get('/download-all-games', (req, res) => {
     if (allGameData.length === 0) {
         res.status(404).send('No game data available yet');
@@ -98,7 +122,7 @@ const nbaPlayers = ["Lebron James", "Kawhi Leonard", "Steph Curry", "Klay Thomps
     "Alperen Sengun", "Jalen Green", "Amen Thompson", "Dillon Brooks", "Collin Sexton", "Isaiah Stewart", 
     "Lauri Markkanen", "Walker Kessler", "Jordan Clarkson", "Jaren Jackson Jr.", "Desmond Bane", 
     "Marcus Smart", "Zach Edey", "Victor Wembanyama", "Keldon Johnson", "Devin Vassell", "Jeremy Sochan", 
-    "Chris Paul", "Anfernee Simons", "Scoot Henderson", "Deandre Ayton", "Jerami Grant", "Shaedon Sharpe", 
+    "Anfernee Simons", "Scoot Henderson", "Deandre Ayton", "Jerami Grant", "Shaedon Sharpe", 
     "Deni Avdija", "Cooper Flagg"];
 
 const rappers = ["Drake", "Future", "21 Savage", "Travis Scott", "Kanye", "XXXTentacion", "Nav", "Roddy Ricch", "A Boogie wit da Hoodie", 
@@ -357,12 +381,13 @@ class BotAI {
 }
 
 class GameRoom {
-    constructor(roomCode, gameType = 'mole') {
+    constructor(roomCode, gameType = 'mole', roomType = 'public') {
         this.roomCode = roomCode;
-        this.gameType = gameType; // NEW: Track game type
+        this.gameType = gameType; // Track game type
+        this.roomType = roomType; // NEW: Track room type (public, private, locked)
+        this.createdAt = new Date(); // NEW: Track creation time for sorting
         this.players = new Map();
         this.bots = new Map();
-        this.isLocked = false;
         this.gameState = {
             status: 'waiting',
             location: null,
@@ -370,9 +395,9 @@ class GameRoom {
             currentRound: 1,
             currentTurn: 0,
             questionsThisRound: 0,
-            hintsThisRound: 0, // NEW: For hint-based games
+            hintsThisRound: 0,
             questionsPerRound: null,
-            hintsPerRound: null, // NEW: For hint-based games
+            hintsPerRound: null,
             questionQueue: [...questions],
             gameHistory: [],
             votes: new Map(),
@@ -395,7 +420,7 @@ class GameRoom {
             location: null,
             imposter: null,
             playerQAs: [],
-            playerHints: [], // NEW: For hint-based games
+            playerHints: [],
             playerVotes: [],
             outcome: null,
             timestamp: null,
@@ -426,8 +451,18 @@ class GameRoom {
         return uniqueName;
     }
 
-    setLocked(locked) {
-        this.isLocked = locked;
+    // NEW: Set room type instead of just locked
+    setRoomType(roomType) {
+        if (['public', 'private', 'locked'].includes(roomType)) {
+            this.roomType = roomType;
+            return true;
+        }
+        return false;
+    }
+
+    // NEW: Check if room is joinable
+    isJoinable() {
+        return this.roomType !== 'locked' && this.gameState.status === 'waiting' && this.players.size < 8;
     }
 
     addPlayer(socketId, requestedName, isHost = false) {
@@ -449,7 +484,7 @@ class GameRoom {
             timesImposterWon: 0,
             questionsAnswered: 0,
             questionsAsked: 0,
-            hintsGiven: 0, // NEW: For hint-based games
+            hintsGiven: 0,
             correctVotes: 0,
             totalVotes: 0,
             roundsSurvived: 0,
@@ -1149,6 +1184,7 @@ class GameRoom {
         return {
             ...this.gameState,
             gameType: this.gameType,
+            roomType: this.roomType, // NEW: Include room type
             playerRole: player?.role,
             isImposter,
             playerOrder: this.playerOrder.map(id => ({
@@ -1162,7 +1198,6 @@ class GameRoom {
             readyToVoteCount: this.gameState.readyToVoteCount,
             readyToVotePlayers: Array.from(this.gameState.readyToVotePlayers),
             gameStats: this.getGameStats(),
-            isLocked: this.isLocked,
             botCount: this.bots.size,
             usingCustomLocations: this.customLocations.length > 0
         };
@@ -1182,14 +1217,44 @@ function generateRoomCode() {
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
-    socket.on('create_room', ({ playerName, gameType = 'mole' }) => {
+    // NEW: Get public lobbies
+    socket.on('get_public_lobbies', () => {
+        const publicLobbies = [];
+        
+        for (const [roomCode, room] of gameRooms.entries()) {
+            if (room.roomType === 'public' && room.gameState.status === 'waiting') {
+                publicLobbies.push({
+                    roomCode: room.roomCode,
+                    gameType: room.gameType,
+                    playerCount: room.players.size,
+                    maxPlayers: 8,
+                    hostName: Array.from(room.players.values()).find(p => p.isHost)?.name || 'Unknown',
+                    usingCustomLocations: room.customLocations.length > 0,
+                    botCount: room.bots.size,
+                    createdAt: room.createdAt
+                });
+            }
+        }
+        
+        // Sort by creation time (newest first) and limit to 10
+        publicLobbies.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        socket.emit('public_lobbies', publicLobbies.slice(0, 10));
+    });
+
+    socket.on('create_room', ({ playerName, gameType = 'mole', roomType = 'public' }) => {
         const roomCode = generateRoomCode();
-        const room = new GameRoom(roomCode, gameType);
+        const room = new GameRoom(roomCode, gameType, roomType);
         const actualName = room.addPlayer(socket.id, playerName, true);
         gameRooms.set(roomCode, room);
         
         socket.join(roomCode);
-        socket.emit('room_created', { roomCode, isHost: true, actualName, gameType });
+        socket.emit('room_created', { 
+            roomCode, 
+            isHost: true, 
+            actualName, 
+            gameType,
+            roomType 
+        });
         socket.emit('room_updated', { 
             players: Array.from(room.players.entries()).map(([id, player]) => ({
                 id, 
@@ -1199,7 +1264,7 @@ io.on('connection', (socket) => {
                 isBot: player.isBot
             })),
             scoreboard: room.getScoreboardData(),
-            isLocked: room.isLocked,
+            roomType: room.roomType,
             botCount: room.bots.size,
             usingCustomLocations: room.customLocations.length > 0,
             gameType: room.gameType
@@ -1224,18 +1289,17 @@ io.on('connection', (socket) => {
             return;
         }
         
-        if (room.isLocked) {
-            socket.emit('error', 'Room is locked');
-            return;
-        }
-        
-        if (room.players.size >= 8) {
-            socket.emit('error', 'Room is full');
-            return;
-        }
-
-        if (room.gameState.status !== 'waiting') {
-            socket.emit('error', 'Game already in progress');
+        // NEW: Check room type and joinability
+        if (!room.isJoinable()) {
+            if (room.roomType === 'locked') {
+                socket.emit('error', 'Room is locked');
+            } else if (room.players.size >= 8) {
+                socket.emit('error', 'Room is full');
+            } else if (room.gameState.status !== 'waiting') {
+                socket.emit('error', 'Game already in progress');
+            } else {
+                socket.emit('error', 'Cannot join room');
+            }
             return;
         }
 
@@ -1246,6 +1310,7 @@ io.on('connection', (socket) => {
             isHost: false, 
             actualName,
             gameType: room.gameType,
+            roomType: room.roomType,
             nameChanged: actualName !== playerName
         });
         
@@ -1258,7 +1323,7 @@ io.on('connection', (socket) => {
                 isBot: player.isBot
             })),
             scoreboard: room.getScoreboardData(),
-            isLocked: room.isLocked,
+            roomType: room.roomType,
             botCount: room.bots.size,
             usingCustomLocations: room.customLocations.length > 0,
             gameType: room.gameType
@@ -1301,56 +1366,25 @@ io.on('connection', (socket) => {
                 isBot: player.isBot
             })),
             scoreboard: room.getScoreboardData(),
-            isLocked: room.isLocked,
+            roomType: room.roomType,
             botCount: room.bots.size,
             usingCustomLocations: room.customLocations.length > 0,
             gameType: room.gameType
         });
     });
 
-    socket.on('remove_bot', ({ botId }) => {
+    // NEW: Change room type (replaces toggle_lock)
+    socket.on('change_room_type', ({ roomType }) => {
         const room = findPlayerRoom(socket.id);
         if (!room || !room.players.get(socket.id)?.isHost) {
-            socket.emit('error', 'Only the host can remove bots');
+            socket.emit('error', 'Only the host can change room type');
             return;
         }
 
-        const result = room.removeBot(botId);
-        
-        if (result.error) {
-            socket.emit('error', result.error);
+        if (!room.setRoomType(roomType)) {
+            socket.emit('error', 'Invalid room type');
             return;
         }
-
-        io.to(room.roomCode).emit('bot_removed', {
-            botName: result.botName,
-            botCount: room.bots.size
-        });
-
-        io.to(room.roomCode).emit('room_updated', { 
-            players: Array.from(room.players.entries()).map(([id, player]) => ({
-                id, 
-                name: player.name, 
-                isHost: player.isHost,
-                isReady: player.isReady,
-                isBot: player.isBot
-            })),
-            scoreboard: room.getScoreboardData(),
-            isLocked: room.isLocked,
-            botCount: room.bots.size,
-            usingCustomLocations: room.customLocations.length > 0,
-            gameType: room.gameType
-        });
-    });
-
-    socket.on('toggle_lock', () => {
-        const room = findPlayerRoom(socket.id);
-        if (!room || !room.players.get(socket.id)?.isHost) {
-            socket.emit('error', 'Only the host can lock/unlock the room');
-            return;
-        }
-
-        room.setLocked(!room.isLocked);
         
         io.to(room.roomCode).emit('room_updated', { 
             players: Array.from(room.players.entries()).map(([id, player]) => ({
@@ -1361,15 +1395,21 @@ io.on('connection', (socket) => {
                 isBot: player.isBot
             })),
             scoreboard: room.getScoreboardData(),
-            isLocked: room.isLocked,
+            roomType: room.roomType,
             botCount: room.bots.size,
             usingCustomLocations: room.customLocations.length > 0,
             gameType: room.gameType
         });
         
-        io.to(room.roomCode).emit('room_lock_changed', { 
-            isLocked: room.isLocked,
-            message: room.isLocked ? 'Room locked - no new players can join' : 'Room unlocked - new players can join'
+        const typeMessages = {
+            public: 'Room is now public - visible in lobby browser and joinable by code',
+            private: 'Room is now private - only joinable by code',
+            locked: 'Room is now locked - no new players can join'
+        };
+        
+        io.to(room.roomCode).emit('room_type_changed', { 
+            roomType: room.roomType,
+            message: typeMessages[room.roomType]
         });
     });
 
@@ -1410,7 +1450,7 @@ io.on('connection', (socket) => {
                 isBot: player.isBot
             })),
             scoreboard: room.getScoreboardData(),
-            isLocked: room.isLocked,
+            roomType: room.roomType,
             botCount: room.bots.size,
             usingCustomLocations: room.customLocations.length > 0,
             gameType: room.gameType
@@ -1434,7 +1474,7 @@ io.on('connection', (socket) => {
                     isBot: player.isBot
                 })),
                 scoreboard: room.getScoreboardData(),
-                isLocked: room.isLocked,
+                roomType: room.roomType,
                 botCount: room.bots.size,
                 usingCustomLocations: room.customLocations.length > 0,
                 gameType: room.gameType
@@ -1746,7 +1786,7 @@ io.on('connection', (socket) => {
                         isBot: player.isBot
                     })),
                     scoreboard: room.getScoreboardData(),
-                    isLocked: room.isLocked,
+                    roomType: room.roomType,
                     botCount: room.bots.size,
                     usingCustomLocations: room.customLocations.length > 0,
                     gameType: room.gameType
@@ -1916,5 +1956,6 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log('Game Collection: The Mole, NBA Imposter, and Rapper Imposter');
+    console.log('Enhanced lobby system: Public, Private, and Locked rooms');
     console.log('Bot support enabled for The Mole only');
 });
