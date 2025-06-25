@@ -652,6 +652,140 @@
                 grid-template-columns: 1fr;
             }
         }
+
+        /* NEW: Room type styles */
+        .room-type-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            margin-left: 1rem;
+        }
+
+        .room-type-status.public {
+            background: rgba(52, 152, 219, 0.2);
+            color: #3498db;
+            border: 1px solid #3498db;
+        }
+
+        .room-type-status.private {
+            background: rgba(243, 156, 18, 0.2);
+            color: #f39c12;
+            border: 1px solid #f39c12;
+        }
+
+        .room-type-status.locked {
+            background: rgba(231, 76, 60, 0.2);
+            color: #e74c3c;
+            border: 1px solid #e74c3c;
+        }
+
+        .room-type-controls {
+            background: rgba(52, 73, 94, 0.2);
+            border: 2px solid #34495e;
+            border-radius: 10px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+
+        .room-type-controls h3 {
+            color: #34495e;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .room-type-options {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .room-type-btn {
+            flex: 1;
+            min-width: 120px;
+            transition: all 0.3s ease;
+        }
+
+        .room-type-btn.active {
+            transform: scale(1.05);
+            box-shadow: 0 4px 15px rgba(52, 152, 219, 0.4);
+        }
+
+        .room-type-description {
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.7);
+            margin: 0;
+            font-style: italic;
+        }
+
+        /* Public lobbies styles */
+        .public-lobby-item {
+            background: rgba(52, 73, 94, 0.8);
+            padding: 1rem;
+            border-radius: 10px;
+            margin: 0.5rem 0;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .public-lobby-item:hover {
+            border-color: rgba(52, 152, 219, 0.6);
+            transform: translateY(-2px);
+        }
+
+        .public-lobby-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .public-lobby-code {
+            font-weight: bold;
+            font-size: 1.2rem;
+            color: #3498db;
+        }
+
+        .public-lobby-game-type {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .public-lobby-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .public-lobby-detail {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .public-lobby-detail.bots {
+            color: #1abc9c;
+        }
+
+        .public-lobby-detail.custom {
+            color: #f39c12;
+        }
+
+        .public-lobby-detail.players {
+            color: #27ae60;
+        }
+
+        .public-lobby-detail.time {
+            color: #95a5a6;
+        }
     </style>
 </head>
 <body>
@@ -708,6 +842,7 @@
                 <div style="text-align: center;">
                     <button class="btn btn-primary" onclick="createRoom()">🎮 Create Room</button>
                     <button class="btn btn-warning" onclick="showJoinRoom()">🚪 Join Room</button>
+                    <button class="btn btn-info" onclick="showPublicLobbies()">🌐 Browse Public Lobbies</button>
                     <button class="btn btn-secondary" onclick="backToGameSelection()">← Back to Game Selection</button>
                 </div>
 
@@ -717,6 +852,13 @@
                         <input type="text" id="room-code" placeholder="Enter room code" maxlength="6">
                     </div>
                     <button class="btn btn-primary" onclick="joinRoom()">Join</button>
+                </div>
+
+                <!-- NEW: Public Lobbies Browser -->
+                <div id="public-lobbies-section" style="display: none; margin-top: 1rem;">
+                    <h3>🌐 Public Lobbies</h3>
+                    <div id="public-lobbies-list"></div>
+                    <button class="btn btn-secondary" onclick="hidePublicLobbies()">Close</button>
                 </div>
             </div>
 
@@ -731,8 +873,8 @@
             <div class="card">
                 <div style="display: flex; align-items: center; margin-bottom: 1rem;">
                     <h2>Room: <span id="room-display"></span></h2>
-                    <div id="lock-status" class="lock-status unlocked">
-                        🔓 Open
+                    <div id="room-type-display" class="room-type-status">
+                        <!-- Room type will be displayed here -->
                     </div>
                 </div>
                 <div id="lobby-players" class="players-list"></div>
@@ -751,11 +893,29 @@
                         ⚠️ Bots will be automatically removed if you set custom locations
                     </div>
                 </div>
+
+                <!-- NEW: Room Type Controls (host only) -->
+                <div id="room-type-controls" class="room-type-controls" style="display: none;">
+                    <h3>🔒 Room Settings</h3>
+                    <div class="room-type-options">
+                        <button class="btn btn-primary room-type-btn" onclick="changeRoomType('public')" data-type="public">
+                            🌐 Public
+                        </button>
+                        <button class="btn btn-warning room-type-btn" onclick="changeRoomType('private')" data-type="private">
+                            🔒 Private
+                        </button>
+                        <button class="btn btn-danger room-type-btn" onclick="changeRoomType('locked')" data-type="locked">
+                            🚫 Locked
+                        </button>
+                    </div>
+                    <p class="room-type-description" id="room-type-description">
+                        Public rooms are visible in the lobby browser and joinable by code.
+                    </p>
+                </div>
                 
                 <div style="text-align: center; margin-top: 2rem;">
                     <button id="ready-btn" class="btn btn-warning" onclick="toggleReady()">Ready Up</button>
                     <button id="start-btn" class="btn btn-primary" onclick="startGame()" style="display: none;">🎮 Start Game</button>
-                    <button id="lock-btn" class="btn btn-secondary" onclick="toggleLock()" style="display: none;">🔒 Lock Room</button>
                     <button id="custom-locations-btn" class="btn btn-info" onclick="showCustomLocations()" style="display: none;">🎯 Custom Locations</button>
                     <button class="btn btn-info" onclick="showScoreboard()">📊 Scoreboard</button>
                     <button class="btn btn-secondary" onclick="backToGameSelection()">← Back to Game Selection</button>
@@ -983,6 +1143,8 @@
         let botCount = 0;
         let usingCustomLocations = false;
         let currentGameType = ''; // NEW: Track current game type
+        let currentRoomType = 'public'; // NEW: Track current room type
+        let publicLobbies = []; // NEW: Store public lobbies data
 
         // NEW: Autocomplete variables
         let currentSuggestions = [];
@@ -1020,7 +1182,7 @@
             "Alperen Sengun", "Jalen Green", "Amen Thompson", "Dillon Brooks", "Collin Sexton", "Isaiah Stewart", 
             "Lauri Markkanen", "Walker Kessler", "Jordan Clarkson", "Jaren Jackson Jr.", "Desmond Bane", 
             "Marcus Smart", "Zach Edey", "Victor Wembanyama", "Keldon Johnson", "Devin Vassell", "Jeremy Sochan", 
-            "Chris Paul", "Anfernee Simons", "Scoot Henderson", "Deandre Ayton", "Jerami Grant", "Shaedon Sharpe", 
+            "Anfernee Simons", "Scoot Henderson", "Deandre Ayton", "Jerami Grant", "Shaedon Sharpe", 
             "Deni Avdija", "Cooper Flagg"];
 
         const rappers = ["Drake", "Future", "21 Savage", "Travis Scott", "Kanye", "XXXTentacion", "Nav", "Roddy Ricch", "A Boogie wit da Hoodie", 
@@ -1224,6 +1386,28 @@
 
         function showJoinRoom() {
             document.getElementById('join-room-section').style.display = 'block';
+            document.getElementById('public-lobbies-section').style.display = 'none';
+        }
+
+        function showPublicLobbies() {
+            socket.emit('request_public_lobbies');
+            document.getElementById('public-lobbies-section').style.display = 'block';
+            document.getElementById('join-room-section').style.display = 'none';
+        }
+
+        function hidePublicLobbies() {
+            document.getElementById('public-lobbies-section').style.display = 'none';
+        }
+
+        function joinPublicLobby(roomCode) {
+            const playerName = document.getElementById('player-name').value.trim();
+            if (!playerName) {
+                showError('Please enter your name first');
+                return;
+            }
+            
+            document.getElementById('room-code').value = roomCode;
+            joinRoom();
         }
 
         function joinRoom() {
@@ -1599,20 +1783,104 @@
             hideCustomLocations();
         }
 
-        function updateLockStatus(isLocked) {
-            isRoomLocked = isLocked;
-            const lockStatus = document.getElementById('lock-status');
-            const lockBtn = document.getElementById('lock-btn');
-            
-            if (isLocked) {
-                lockStatus.className = 'lock-status locked';
-                lockStatus.innerHTML = '🔒 Locked';
-                if (lockBtn) lockBtn.textContent = '🔓 Unlock Room';
-            } else {
-                lockStatus.className = 'lock-status unlocked';
-                lockStatus.innerHTML = '🔓 Open';
-                if (lockBtn) lockBtn.textContent = '🔒 Lock Room';
+        function changeRoomType(roomType) {
+            if (!isHost) {
+                showError('Only the host can change room type');
+                return;
             }
+            
+            socket.emit('change_room_type', { roomType });
+        }
+
+        function updateRoomTypeDisplay(roomType) {
+            currentRoomType = roomType;
+            const roomTypeDisplay = document.getElementById('room-type-display');
+            const roomTypeControls = document.getElementById('room-type-controls');
+            
+            // Update room type display
+            roomTypeDisplay.className = `room-type-status ${roomType}`;
+            
+            const typeTexts = {
+                public: '🌐 Public',
+                private: '🔒 Private', 
+                locked: '🚫 Locked'
+            };
+            
+            roomTypeDisplay.textContent = typeTexts[roomType];
+            
+            // Update room type controls (host only)
+            if (isHost) {
+                roomTypeControls.style.display = 'block';
+                
+                // Update active button
+                document.querySelectorAll('.room-type-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                document.querySelector(`[data-type="${roomType}"]`).classList.add('active');
+                
+                // Update description
+                const descriptions = {
+                    public: 'Public rooms are visible in the lobby browser and joinable by code.',
+                    private: 'Private rooms are only joinable by code (not visible in lobby browser).',
+                    locked: 'Locked rooms - no new players can join.'
+                };
+                document.getElementById('room-type-description').textContent = descriptions[roomType];
+            } else {
+                roomTypeControls.style.display = 'none';
+            }
+        }
+
+        function displayPublicLobbies(lobbies) {
+            const container = document.getElementById('public-lobbies-list');
+            
+            if (!lobbies || lobbies.length === 0) {
+                container.innerHTML = '<p>No public lobbies available at the moment.</p>';
+                return;
+            }
+            
+            let html = '';
+            lobbies.forEach(lobby => {
+                const gameTypeText = lobby.gameType === 'nba' ? 'NBA Imposter' : 
+                                    lobby.gameType === 'rapper' ? 'Rapper Imposter' : 'The Mole';
+                
+                const timeAgo = getTimeAgo(new Date(lobby.createdAt));
+                
+                html += `
+                    <div class="public-lobby-item" onclick="joinPublicLobby('${lobby.roomCode}')">
+                        <div class="public-lobby-header">
+                            <span class="public-lobby-code">${lobby.roomCode}</span>
+                            <span class="public-lobby-game-type">${gameTypeText}</span>
+                        </div>
+                        <div class="public-lobby-details">
+                            <div class="public-lobby-detail players">
+                                👥 ${lobby.playerCount}/${lobby.maxPlayers} players
+                            </div>
+                            <div class="public-lobby-detail">
+                                👑 ${lobby.hostName}
+                            </div>
+                            ${lobby.botCount > 0 ? `<div class="public-lobby-detail bots">🤖 ${lobby.botCount} bots</div>` : ''}
+                            ${lobby.usingCustomLocations ? '<div class="public-lobby-detail custom">🎯 Custom locations</div>' : ''}
+                            <div class="public-lobby-detail time">
+                                ⏰ ${timeAgo}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+
+        function getTimeAgo(date) {
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMins / 60);
+            
+            if (diffMins < 1) return 'Just now';
+            if (diffMins < 60) return `${diffMins}m ago`;
+            if (diffHours < 24) return `${diffHours}h ago`;
+            return `${Math.floor(diffHours / 24)}d ago`;
         }
 
         // Socket event handlers
@@ -1622,7 +1890,9 @@
             actualPlayerName = data.actualName;
             playerName = actualPlayerName;
             currentGameType = data.gameType;
+            currentRoomType = data.roomType || 'public';
             document.getElementById('room-display').textContent = currentRoom;
+            updateRoomTypeDisplay(currentRoomType);
             showScreen('lobby-screen');
             showSuccess(`Room created! Code: ${currentRoom}`);
         });
@@ -1633,7 +1903,9 @@
             actualPlayerName = data.actualName;
             playerName = actualPlayerName;
             currentGameType = data.gameType;
+            currentRoomType = data.roomType || 'public';
             document.getElementById('room-display').textContent = currentRoom;
+            updateRoomTypeDisplay(currentRoomType);
             showScreen('lobby-screen');
             showSuccess(`Joined room: ${currentRoom}`);
         });
@@ -1642,9 +1914,14 @@
             showWarning(`Your name was changed from "${data.originalName}" to "${data.newName}" because that name was already taken.`);
         });
 
-        socket.on('room_lock_changed', (data) => {
-            updateLockStatus(data.isLocked);
+        socket.on('room_type_changed', (data) => {
+            updateRoomTypeDisplay(data.roomType);
             showInfo(data.message);
+        });
+
+        socket.on('public_lobbies', (data) => {
+            publicLobbies = data;
+            displayPublicLobbies(data);
         });
 
         socket.on('kicked', (data) => {
@@ -1683,7 +1960,9 @@
             if (data.scoreboard) {
                 updateLobbyScoreboard(data.scoreboard);
             }
-            updateLockStatus(data.isLocked);
+            if (data.hasOwnProperty('roomType')) {
+                updateRoomTypeDisplay(data.roomType);
+            }
             updateBotControls();
         });
 
@@ -1692,8 +1971,8 @@
             if (data.scoreboard) {
                 updateLobbyScoreboard(data.scoreboard);
             }
-            if (data.hasOwnProperty('isLocked')) {
-                updateLockStatus(data.isLocked);
+            if (data.hasOwnProperty('roomType')) {
+                updateRoomTypeDisplay(data.roomType);
             }
             if (data.hasOwnProperty('botCount')) {
                 botCount = data.botCount;
@@ -1713,8 +1992,8 @@
             if (data.scoreboard) {
                 updateLobbyScoreboard(data.scoreboard);
             }
-            if (data.hasOwnProperty('isLocked')) {
-                updateLockStatus(data.isLocked);
+            if (data.hasOwnProperty('roomType')) {
+                updateRoomTypeDisplay(data.roomType);
             }
             if (data.hasOwnProperty('botCount')) {
                 botCount = data.botCount;
