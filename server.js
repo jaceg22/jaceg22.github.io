@@ -3,6 +3,7 @@ const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
 const fs = require('fs');
+const allGameData = [];
 
 const app = express();
 const server = http.createServer(app);
@@ -11,18 +12,94 @@ const io = socketIo(server);
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Enhanced lobby endpoint to get public lobbies
+app.get('/api/public-lobbies', (req, res) => {
+    const publicLobbies = [];
+    
+    for (const [roomCode, room] of gameRooms.entries()) {
+        if (room.roomType === 'public' && room.gameState.status === 'waiting') {
+            publicLobbies.push({
+                roomCode: room.roomCode,
+                gameType: room.gameType,
+                playerCount: room.players.size,
+                maxPlayers: 8,
+                hostName: Array.from(room.players.values()).find(p => p.isHost)?.name || 'Unknown',
+                usingCustomLocations: room.customLocations.length > 0,
+                botCount: room.bots.size,
+                createdAt: room.createdAt
+            });
+        }
+    }
+    
+    // Sort by creation time (newest first) and limit to 10
+    publicLobbies.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    res.json(publicLobbies.slice(0, 10));
+});
+
+app.get('/download-all-games', (req, res) => {
+    if (allGameData.length === 0) {
+        res.status(404).send('No game data available yet');
+        return;
+    }
+
+    let output = '';
+    allGameData.forEach(gameData => {
+        output += '============================================================\n';
+        output += `GAME ${gameData.gameNumber}\n`;
+        output += `Game Type: ${gameData.gameType}\n`;
+        output += `Timestamp: ${gameData.timestamp}\n`;
+        output += `Room: ${gameData.roomCode}\n`;
+        output += `${gameData.gameType === 'mole' ? 'Location' : gameData.gameType === 'nba' ? 'NBA Player' : 'Rapper'}: ${gameData.location}\n`;
+        output += `Imposter: ${gameData.imposter}\n`;
+        output += `Outcome: ${gameData.outcome}\n`;
+        output += '\n';
+        
+        if (gameData.gameType === 'mole') {
+            output += 'QUESTIONS AND ANSWERS:\n';
+            gameData.playerQAs.forEach(qa => {
+                output += `${qa.asker} asks ${qa.target}: "${qa.question}"\n`;
+                output += `${qa.target} (${qa.targetRole}): "${qa.answer}"\n`;
+                output += '\n';
+            });
+        } else {
+            output += 'HINTS:\n';
+            gameData.playerHints.forEach(hint => {
+                output += `${hint.player} (${hint.playerRole}): "${hint.hint}"\n`;
+                output += '\n';
+            });
+        }
+        
+        output += 'VOTES:\n';
+        gameData.playerVotes.forEach(vote => {
+            const correctText = vote.wasCorrect ? 'CORRECT' : 'WRONG';
+            output += `${vote.voter} votes for ${vote.votedFor} (${correctText})\n`;
+            if (vote.reasoning) {
+                output += `Reasoning: ${vote.reasoning}\n`;
+            }
+        });
+        
+        output += '============================================================\n\n';
+    });
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `game-collection-all-games-${timestamp}.txt`;
+    
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'text/plain');
+    res.send(output);
+});
+
 // Game configuration
-const defaultLocations = Array.from(new Set([
+const defaultLocations = [
     "Circus", "Amusement Park", "Crashing Airplane", "Titanic",
     "Burning Orphanage", "Dingy Motel Drug Deal", "Prison", "Safari",
     "Zombie Apocalypse", "Organ-Harvesting Hospital", "Nuclear Submarine",
     "Daycare", "Amazon Rainforest", "Concert Hall", "Space Station",
     "High School", "Haunted Mansion", "Beach"
-]));
+];
 
 // NEW: Player lists for new game types
-const nbaPlayers = Array.from(new Set([
-    "Lebron James", "Kawhi Leonard", "Steph Curry", "Klay Thompson", "Damian Lillard", "Giannis Antetokounmpo", 
+const nbaPlayers = ["Lebron James", "Kawhi Leonard", "Steph Curry", "Klay Thompson", "Damian Lillard", "Giannis Antetokounmpo", 
     "Chris Paul", "Zion Williamson", "Ja Morant", "Scottie Barnes", "Chet Holmgren", "Paolo Banchero", 
     "Franz Wagner", "Gradey Dick", "Kyle Lowry", "DeMar DeRozan", "CJ McCollum", "Anthony Davis", 
     "Fred VanVleet", "Miles Bridges", "James Harden", "Russell Westbrook", "Joel Embiid", "Tyrese Maxey", 
@@ -31,10 +108,10 @@ const nbaPlayers = Array.from(new Set([
     "Ben Simmons", "Nic Claxton", "Spencer Dinwiddie", "Jayson Tatum", "Jaylen Brown", "Derrick White", 
     "Jrue Holiday", "Kristaps Porzingis", "Al Horford", "Gary Trent Jr.", "Brook Lopez", "Khris Middleton", 
     "Bobby Portis", "Tyrese Haliburton", "Pascal Siakam", "Myles Turner", "Bennedict Mathurin", "Obi Toppin", 
-    "Darius Garland", "Donovan Mitchell", "Evan Mobley", "Jarrett Allen", "Zach LaVine", 
+    "Darius Garland", "Donovan Mitchell", "Evan Mobley", "Jarrett Allen", "DeMar DeRozan", "Zach LaVine", 
     "Nikola Vucevic", "Josh Giddey", "Cade Cunningham", "Jaden Ivey", "Ausar Thompson", "Jalen Duren", 
     "Tobias Harris", "Jimmy Butler", "Bam Adebayo", "Terry Rozier", "Tyler Herro", "Duncan Robinson", 
-    "Trae Young", "Clint Capela", "Zaccharie Risacher", "LaMelo Ball", "Brandon Miller", 
+    "Trae Young", "Clint Capela", "Zaccharie Risacher", "LaMelo Ball", "Miles Bridges", "Brandon Miller", 
     "Grant Williams", "Seth Curry", "Kyle Kuzma", "Jordan Poole", "Alex Sarr", "Shai Gilgeous-Alexander", 
     "Jalen Williams", "Lu Dort", "Alex Caruso", "Nikola Jokic", "Jamal Murray", "Michael Porter Jr.", 
     "Aaron Gordon", "Bruce Brown", "Anthony Edwards", "Mike Conley", "Rudy Gobert", "Karl-Anthony Towns", 
@@ -46,16 +123,13 @@ const nbaPlayers = Array.from(new Set([
     "Lauri Markkanen", "Walker Kessler", "Jordan Clarkson", "Jaren Jackson Jr.", "Desmond Bane", 
     "Marcus Smart", "Zach Edey", "Victor Wembanyama", "Keldon Johnson", "Devin Vassell", "Jeremy Sochan", 
     "Anfernee Simons", "Scoot Henderson", "Deandre Ayton", "Jerami Grant", "Shaedon Sharpe", 
-    "Deni Avdija", "Cooper Flagg"
-]));
+    "Deni Avdija", "Cooper Flagg"];
 
-const rappers = Array.from(new Set([
-    "Drake", "Future", "21 Savage", "Travis Scott", "Kanye", "XXXTentacion", "Nav", "Roddy Ricch", "A Boogie wit da Hoodie", 
+const rappers = ["Drake", "Future", "21 Savage", "Travis Scott", "Kanye", "XXXTentacion", "Nav", "Roddy Ricch", "A Boogie wit da Hoodie", 
     "Post Malone", "Lil Baby", "Lil Wayne", "Baby Keem", "Kendrick Lamar", "Lil Tecca", "Don Toliver", "Chris Brown", 
     "Coi Leray", "Nicki Minaj", "Cardi B", "DaBaby", "J. Cole", "Eminem", "Gunna", "Quavo", "Jay-Z", "Juice WRLD", "Big Black Banana Man", 
     "The Weeknd", "Kid Cudi", "Kodak Black", "Lil Durk", "Lil Skies", "Lil Tjay", "Lil Uzi Vert", "Meek Mill", "Nas", "PARTYNEXTDOOR",
-    "Offset", "Playboi Carti", "Polo G", "Pop Smoke", "Swae Lee", "Tory Lanez", "Young Thug", "Ty Dolla $ign"
-]));
+    "Offset", "PARTYNEXTDOOR", "Playboi Carti", "Polo G", "Pop Smoke", "Swae Lee", "Tory Lanez", "Young Thug", "Ty Dolla $ign", "Nicki Minaj"];
 
 // The Mole question system (unchanged)
 const questions = [
@@ -145,7 +219,7 @@ const questionPromptsMap = new Map(questionPrompts);
 // Store game rooms
 const gameRooms = new Map();
 
-// Bot AI logic (only for The Mole)
+// Bot AI logic (only for The Mole - unchanged)
 class BotAI {
     constructor(botId, difficulty = 'medium') {
         this.botId = botId;
@@ -309,9 +383,9 @@ class BotAI {
 class GameRoom {
     constructor(roomCode, gameType = 'mole', roomType = 'public') {
         this.roomCode = roomCode;
-        this.gameType = gameType;
-        this.roomType = roomType;
-        this.createdAt = new Date();
+        this.gameType = gameType; // Track game type
+        this.roomType = roomType; // NEW: Track room type (public, private, locked)
+        this.createdAt = new Date(); // NEW: Track creation time for sorting
         this.players = new Map();
         this.bots = new Map();
         this.gameState = {
@@ -339,6 +413,19 @@ class GameRoom {
         this.gameHistory = [];
         this.customLocations = [];
         this.botSuspicion = new Map();
+        
+        this.currentGameData = {
+            gameNumber: 1,
+            gameType: gameType,
+            location: null,
+            imposter: null,
+            playerQAs: [],
+            playerHints: [],
+            playerVotes: [],
+            outcome: null,
+            timestamp: null,
+            roomCode: this.roomCode
+        };
     }
 
     generateUniqueName(requestedName) {
@@ -364,6 +451,7 @@ class GameRoom {
         return uniqueName;
     }
 
+    // NEW: Set room type instead of just locked
     setRoomType(roomType) {
         if (['public', 'private', 'locked'].includes(roomType)) {
             this.roomType = roomType;
@@ -372,6 +460,7 @@ class GameRoom {
         return false;
     }
 
+    // NEW: Check if room is joinable
     isJoinable() {
         return this.roomType !== 'locked' && this.gameState.status === 'waiting' && this.players.size < 8;
     }
@@ -409,6 +498,7 @@ class GameRoom {
         return uniqueName;
     }
 
+    // Bot functions only work for The Mole
     addBot(difficulty = 'medium') {
         if (this.gameType !== 'mole') {
             return { error: 'Bots are only available for The Mole game' };
@@ -574,7 +664,19 @@ class GameRoom {
         console.log(`${this.gameType === 'mole' ? 'Location' : this.gameType === 'nba' ? 'NBA Player' : 'Rapper'}: ${this.gameState.location}`);
         console.log(`Imposter: ${this.players.get(this.gameState.imposter).name}`);
         
-        // Reset all players and assign roles
+        this.currentGameData = {
+            gameNumber: this.gameHistory.length + 1,
+            gameType: this.gameType,
+            location: this.gameState.location,
+            imposter: this.players.get(this.gameState.imposter).name,
+            playerQAs: [],
+            playerHints: [],
+            playerVotes: [],
+            outcome: null,
+            timestamp: new Date().toISOString(),
+            roomCode: this.roomCode
+        };
+        
         this.players.forEach((player, socketId) => {
             const stats = this.scoreboard.get(socketId);
             stats.gamesPlayed++;
@@ -607,6 +709,7 @@ class GameRoom {
         this.gameState.questionAskedThisTurn = false;
         this.gameState.waitingForAnswer = false;
         
+        // Initialize bot suspicion tracking (only for The Mole)
         if (this.gameType === 'mole') {
             this.botSuspicion.clear();
             for (const [botId, bot] of this.bots.entries()) {
@@ -644,6 +747,7 @@ class GameRoom {
         return { question, prompt };
     }
 
+    // The Mole question handling (unchanged)
     handleAskQuestion(askerId, targetId) {
         if (this.gameType !== 'mole') {
             return { error: 'Questions only available in The Mole game' };
@@ -688,6 +792,7 @@ class GameRoom {
         };
     }
 
+    // NEW: Hint handling for NBA/Rapper games
     handleGiveHint(playerId, hint) {
         if (this.gameType === 'mole') {
             return { error: 'Hints not available in The Mole game' };
@@ -702,6 +807,16 @@ class GameRoom {
 
         console.log(`Hint given in room ${this.roomCode}: ${playerName} says "${hint}"`);
 
+        // Save hint to game data
+        this.currentGameData.playerHints.push({
+            player: playerName,
+            hint: hint,
+            playerRole: player.role,
+            wasPlayerImposter: playerId === this.gameState.imposter,
+            round: this.gameState.currentRound
+        });
+
+        // Save to game history
         this.gameState.gameHistory.push({
             player: playerName,
             hint: hint,
@@ -768,6 +883,17 @@ class GameRoom {
             round: this.gameState.currentRound
         });
 
+        const targetPlayer = this.players.get(targetId);
+        this.currentGameData.playerQAs.push({
+            asker: this.players.get(askerId).name,
+            target: targetPlayer.name,
+            question: question,
+            answer: answer,
+            targetRole: targetPlayer.role,
+            wasTargetImposter: targetId === this.gameState.imposter,
+            round: this.gameState.currentRound
+        });
+
         const askerStats = this.scoreboard.get(askerId);
         const targetStats = this.scoreboard.get(targetId);
         askerStats.questionsAsked++;
@@ -779,6 +905,7 @@ class GameRoom {
         }
         this.gameState.playerAnswers.get(targetName).push(answer);
 
+        // Update bot suspicion levels
         for (const [botId, bot] of this.bots.entries()) {
             if (botId !== targetId) {
                 bot.updateSuspicion(
@@ -803,34 +930,19 @@ class GameRoom {
     }
 
     readyToVote(playerId) {
-        const player = this.players.get(playerId);
-        if (!player || player.isHost || player.isBot) {
-            // Only non-host, non-bot players can ready up
-            return;
-        }
         if (this.gameState.readyToVotePlayers.has(playerId)) {
-            console.log(`Player ${player.name} already marked ready to vote`);
+            console.log(`Player ${this.players.get(playerId).name} already marked ready to vote`);
             return;
         }
+
         this.gameState.readyToVotePlayers.add(playerId);
-        this.gameState.readyToVoteCount = this.gameState.readyToVotePlayers.size;
-        // Calculate required count: all non-host, non-bot players
-        const requiredCount = Array.from(this.players.values()).filter(p => !p.isHost && !p.isBot).length;
-        console.log(`${player.name} is ready to vote. Count: ${this.gameState.readyToVoteCount}/${requiredCount}`);
-        // Emit ready count update
-        if (this.roomCode) {
-            io.to(this.roomCode).emit('ready_count_updated', {
-                readyCount: this.gameState.readyToVoteCount,
-                requiredCount
-            });
-        }
-        if (this.gameState.readyToVoteCount >= requiredCount) {
+        this.gameState.readyToVoteCount++;
+        
+        console.log(`${this.players.get(playerId).name} is ready to vote. Count: ${this.gameState.readyToVoteCount}/${this.players.size - 1}`);
+
+        if (this.gameState.readyToVoteCount >= this.players.size - 1) {
             console.log('Enough players ready, starting voting phase');
             this.startVoting();
-            // Notify all clients to show voting
-            if (this.roomCode) {
-                io.to(this.roomCode).emit('game_updated', this.getGameStateForPlayer(this.hostId));
-            }
         }
     }
 
@@ -841,8 +953,6 @@ class GameRoom {
     }
 
     submitVote(voterId, targetId, reasoning = null) {
-        const voter = this.players.get(voterId);
-        if (!voter || voter.isBot) return;
         if (voterId === targetId) {
             console.log(`Player ${this.players.get(voterId).name} tried to vote for themselves - ignored`);
             return;
@@ -851,18 +961,23 @@ class GameRoom {
         console.log(`Vote submitted: ${this.players.get(voterId).name} votes for ${this.players.get(targetId)?.name || 'Unknown'}`);
         this.gameState.votes.set(voterId, targetId);
         
+        const voterPlayer = this.players.get(voterId);
+        const targetPlayer = this.players.get(targetId);
+        this.currentGameData.playerVotes.push({
+            voter: voterPlayer.name,
+            votedFor: targetPlayer?.name || 'Unknown',
+            wasCorrect: targetId === this.gameState.imposter,
+            voterWasImposter: voterId === this.gameState.imposter,
+            reasoning: reasoning || null
+        });
+        
         const voterStats = this.scoreboard.get(voterId);
         voterStats.totalVotes++;
         if (targetId === this.gameState.imposter) {
             voterStats.correctVotes++;
         }
         
-        // Count only human players (not bots)
-        const humanPlayers = Array.from(this.players.entries()).filter(([id, p]) => !p.isBot);
-        const humanPlayerCount = humanPlayers.length;
-        console.log('Human players expected to vote:', humanPlayers.map(([id, p]) => `${p.name} (${id})`).join(', '));
-        console.log('Votes received:', Array.from(this.gameState.votes.entries()).map(([id, target]) => `${this.players.get(id)?.name} -> ${this.players.get(target)?.name}`).join(', '));
-        if (this.gameState.votes.size === humanPlayerCount) {
+        if (this.gameState.votes.size === this.players.size) {
             console.log('All votes received, processing results');
             this.processVotingResults();
         }
@@ -887,7 +1002,6 @@ class GameRoom {
     }
 
     processVotingResults() {
-        console.log('Processing voting results...');
         const voteCounts = new Map();
         
         this.gameState.votes.forEach((targetId) => {
@@ -908,8 +1022,7 @@ class GameRoom {
             }
         });
 
-        const humanPlayers = Array.from(this.players.entries()).filter(([id, p]) => !p.isBot);
-        const requiredVotes = humanPlayers.length - 1;
+        const requiredVotes = this.players.size - 1;
         console.log(`Required votes: ${requiredVotes}, Max votes: ${maxVotes}`);
         
         if (maxVotes >= requiredVotes && mostVoted) {
@@ -929,6 +1042,7 @@ class GameRoom {
         }
     }
 
+    // NEW: Handle imposter guess for NBA/Rapper games
     imposterGuess(guess) {
         console.log(`Imposter guess: ${this.players.get(this.gameState.imposter).name} guessed ${guess} (correct: ${this.gameState.location})`);
         const wasCorrect = guess === this.gameState.location;
@@ -943,6 +1057,7 @@ class GameRoom {
         }
     }
 
+    // The Mole location reveal (unchanged)
     imposterReveal(locationGuess) {
         console.log(`Imposter reveal: ${this.players.get(this.gameState.imposter).name} guessed ${locationGuess} (correct: ${this.gameState.location})`);
         const wasCorrect = locationGuess === this.gameState.location;
@@ -969,10 +1084,26 @@ class GameRoom {
             imposter: this.players.get(this.gameState.imposter).name
         };
 
+        this.currentGameData.outcome = winner;
         this.updateScoreboardAfterGame(winner);
         this.saveGameToHistory();
+        this.saveGameData();
         
         console.log(`Game state after ending: status=${this.gameState.status}, winner=${winner}`);
+    }
+
+    saveGameData() {
+        if (this.gameType === 'mole' && this.currentGameData.playerQAs.length === 0) {
+            console.log('No Mole game data to save');
+            return;
+        }
+        if (this.gameType !== 'mole' && this.currentGameData.playerHints.length === 0) {
+            console.log('No hint game data to save');
+            return;
+        }
+    
+        allGameData.push(JSON.parse(JSON.stringify(this.currentGameData)));
+        console.log(`📊 Total games stored: ${allGameData.length} (available for download)`);
     }
 
     updateScoreboardAfterGame(winner) {
@@ -1051,22 +1182,9 @@ class GameRoom {
         const isImposter = socketId === this.gameState.imposter;
         
         return {
-            status: this.gameState.status,
-            location: this.gameState.location,
-            currentRound: this.gameState.currentRound,
-            currentTurn: this.gameState.currentTurn,
-            questionsThisRound: this.gameState.questionsThisRound,
-            hintsThisRound: this.gameState.hintsThisRound,
-            questionsPerRound: this.gameState.questionsPerRound,
-            hintsPerRound: this.gameState.hintsPerRound,
-            gameHistory: this.gameState.gameHistory,
-            currentQuestion: this.gameState.currentQuestion,
-            readyToVoteCount: this.gameState.readyToVoteCount,
-            readyToVotePlayers: Array.from(this.gameState.readyToVotePlayers),
-            questionAskedThisTurn: this.gameState.questionAskedThisTurn,
-            waitingForAnswer: this.gameState.waitingForAnswer,
+            ...this.gameState,
             gameType: this.gameType,
-            roomType: this.roomType,
+            roomType: this.roomType, // NEW: Include room type
             playerRole: player?.role,
             isImposter,
             playerOrder: this.playerOrder.map(id => ({
@@ -1077,6 +1195,8 @@ class GameRoom {
             })),
             imposter: this.gameState.status === 'ended' ? this.gameState.imposter : null,
             scoreboard: this.getScoreboardData(),
+            readyToVoteCount: this.gameState.readyToVoteCount,
+            readyToVotePlayers: Array.from(this.gameState.readyToVotePlayers),
             gameStats: this.getGameStats(),
             botCount: this.bots.size,
             usingCustomLocations: this.customLocations.length > 0
@@ -1084,47 +1204,61 @@ class GameRoom {
     }
 }
 
-// Socket.IO event handlers
+function generateRoomCode() {
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    let result = '';
+    for (let i = 0; i < 6; i++) {
+        result += letters.charAt(Math.floor(Math.random() * letters.length));
+    }
+    return result;
+}
+
+// Socket.IO connection handling
 io.on('connection', (socket) => {
-    console.log(`User connected: ${socket.id}`);
-    
-    let currentRoom = null;
-    let playerName = null;
-    let gameType = null;
+    console.log('User connected:', socket.id);
 
-    socket.on('create_room', (data) => {
-        const { playerName: name, gameType: type, roomType = 'public' } = data;
+    // NEW: Get public lobbies
+    socket.on('get_public_lobbies', () => {
+        const publicLobbies = [];
         
-        if (!name || !type) {
-            socket.emit('error', { message: 'Name and game type are required' });
-            return;
+        for (const [roomCode, room] of gameRooms.entries()) {
+            if (room.roomType === 'public' && room.gameState.status === 'waiting') {
+                publicLobbies.push({
+                    roomCode: room.roomCode,
+                    gameType: room.gameType,
+                    playerCount: room.players.size,
+                    maxPlayers: 8,
+                    hostName: Array.from(room.players.values()).find(p => p.isHost)?.name || 'Unknown',
+                    usingCustomLocations: room.customLocations.length > 0,
+                    botCount: room.bots.size,
+                    createdAt: room.createdAt
+                });
+            }
         }
-
-        const roomCode = generateRoomCode();
-        const room = new GameRoom(roomCode, type, roomType);
         
-        const actualName = room.addPlayer(socket.id, name, true);
+        // Sort by creation time (newest first) and limit to 10
+        publicLobbies.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        socket.emit('public_lobbies', publicLobbies.slice(0, 10));
+    });
+
+    socket.on('create_room', ({ playerName, gameType = 'mole', roomType = 'public' }) => {
+        const roomCode = generateRoomCode();
+        const room = new GameRoom(roomCode, gameType, roomType);
+        const actualName = room.addPlayer(socket.id, playerName, true);
         gameRooms.set(roomCode, room);
         
         socket.join(roomCode);
-        currentRoom = roomCode;
-        playerName = actualName;
-        gameType = type;
-        
-        console.log(`Room created: ${roomCode} (${type}) by ${actualName}`);
-        
-        socket.emit('room_created', {
-            roomCode,
-            isHost: true,
-            actualName,
-            gameType: type,
-            roomType: roomType
+        socket.emit('room_created', { 
+            roomCode, 
+            isHost: true, 
+            actualName, 
+            gameType,
+            roomType 
         });
-        
-        io.to(roomCode).emit('room_updated', {
+        socket.emit('room_updated', { 
             players: Array.from(room.players.entries()).map(([id, player]) => ({
-                id,
-                name: player.name,
+                id, 
+                name: player.name, 
                 isHost: player.isHost,
                 isReady: player.isReady,
                 isBot: player.isBot
@@ -1137,45 +1271,96 @@ io.on('connection', (socket) => {
         });
     });
 
-    socket.on('join_room', (data) => {
-        const { roomCode, playerName: name, gameType: type } = data;
-        
-        if (!name || !roomCode) {
-            socket.emit('error', { message: 'Name and room code are required' });
-            return;
-        }
-
+    socket.on('join_room', ({ roomCode, playerName, gameType }) => {
         const room = gameRooms.get(roomCode);
         if (!room) {
-            socket.emit('error', { message: 'Room not found' });
+            socket.emit('error', 'Room not found');
             return;
         }
-
+        
+        // Check if trying to join with wrong game type
+        if (room.gameType !== gameType) {
+            const gameNames = {
+                'mole': 'The Mole',
+                'nba': 'NBA Imposter', 
+                'rapper': 'Rapper Imposter'
+            };
+            socket.emit('error', `This room is playing ${gameNames[room.gameType]}, not ${gameNames[gameType]}`);
+            return;
+        }
+        
+        // NEW: Check room type and joinability
         if (!room.isJoinable()) {
-            socket.emit('error', { message: 'Room is not joinable' });
+            if (room.roomType === 'locked') {
+                socket.emit('error', 'Room is locked');
+            } else if (room.players.size >= 8) {
+                socket.emit('error', 'Room is full');
+            } else if (room.gameState.status !== 'waiting') {
+                socket.emit('error', 'Game already in progress');
+            } else {
+                socket.emit('error', 'Cannot join room');
+            }
             return;
         }
 
-        const actualName = room.addPlayer(socket.id, name, false);
+        const actualName = room.addPlayer(socket.id, playerName);
         socket.join(roomCode);
-        currentRoom = roomCode;
-        playerName = actualName;
-        gameType = type || room.gameType;
-        
-        console.log(`Player joined: ${actualName} joined ${roomCode}`);
-        
-        socket.emit('room_joined', {
-            roomCode,
-            isHost: false,
+        socket.emit('room_joined', { 
+            roomCode, 
+            isHost: false, 
             actualName,
             gameType: room.gameType,
-            roomType: room.roomType
+            roomType: room.roomType,
+            nameChanged: actualName !== playerName
         });
         
-        io.to(roomCode).emit('room_updated', {
+        io.to(roomCode).emit('room_updated', { 
             players: Array.from(room.players.entries()).map(([id, player]) => ({
-                id,
-                name: player.name,
+                id, 
+                name: player.name, 
+                isHost: player.isHost,
+                isReady: player.isReady,
+                isBot: player.isBot
+            })),
+            scoreboard: room.getScoreboardData(),
+            roomType: room.roomType,
+            botCount: room.bots.size,
+            usingCustomLocations: room.customLocations.length > 0,
+            gameType: room.gameType
+        });
+        
+        if (actualName !== playerName) {
+            socket.emit('name_changed', { 
+                originalName: playerName, 
+                newName: actualName 
+            });
+        }
+    });
+
+    // Bot management (only for The Mole)
+    socket.on('add_bot', ({ difficulty = 'medium' }) => {
+        const room = findPlayerRoom(socket.id);
+        if (!room || !room.players.get(socket.id)?.isHost) {
+            socket.emit('error', 'Only the host can add bots');
+            return;
+        }
+
+        const result = room.addBot(difficulty);
+        
+        if (result.error) {
+            socket.emit('error', result.error);
+            return;
+        }
+
+        io.to(room.roomCode).emit('bot_added', {
+            botName: result.botName,
+            botCount: room.bots.size
+        });
+
+        io.to(room.roomCode).emit('room_updated', { 
+            players: Array.from(room.players.entries()).map(([id, player]) => ({
+                id, 
+                name: player.name, 
                 isHost: player.isHost,
                 isReady: player.isReady,
                 isBot: player.isBot
@@ -1188,359 +1373,607 @@ io.on('connection', (socket) => {
         });
     });
 
-    socket.on('get_public_lobbies', () => {
-        const publicLobbies = Array.from(gameRooms.values())
-            .filter(room => room.roomType === 'public' && room.isJoinable())
-            .map(room => ({
-                roomCode: room.roomCode,
-                gameType: room.gameType,
-                playerCount: room.players.size,
-                createdAt: room.createdAt
-            }))
-            .sort((a, b) => b.createdAt - a.createdAt);
-        
-        socket.emit('public_lobbies', publicLobbies);
-    });
+    // NEW: Change room type (replaces toggle_lock)
+    socket.on('change_room_type', ({ roomType }) => {
+        const room = findPlayerRoom(socket.id);
+        if (!room || !room.players.get(socket.id)?.isHost) {
+            socket.emit('error', 'Only the host can change room type');
+            return;
+        }
 
-    socket.on('change_room_type', (data) => {
-        const { roomType } = data;
-        const room = gameRooms.get(currentRoom);
-        
-        if (!room || room.hostId !== socket.id) {
-            socket.emit('error', { message: 'Only the host can change room type' });
+        if (!room.setRoomType(roomType)) {
+            socket.emit('error', 'Invalid room type');
             return;
         }
         
-        if (room.setRoomType(roomType)) {
-            io.to(currentRoom).emit('room_updated', {
-                players: Array.from(room.players.entries()).map(([id, player]) => ({
-                    id,
-                    name: player.name,
-                    isHost: player.isHost,
-                    isReady: player.isReady,
-                    isBot: player.isBot
-                })),
-                scoreboard: room.getScoreboardData(),
-                roomType: room.roomType,
-                botCount: room.bots.size,
-                usingCustomLocations: room.customLocations.length > 0,
-                gameType: room.gameType
-            });
+        io.to(room.roomCode).emit('room_updated', { 
+            players: Array.from(room.players.entries()).map(([id, player]) => ({
+                id, 
+                name: player.name, 
+                isHost: player.isHost,
+                isReady: player.isReady,
+                isBot: player.isBot
+            })),
+            scoreboard: room.getScoreboardData(),
+            roomType: room.roomType,
+            botCount: room.bots.size,
+            usingCustomLocations: room.customLocations.length > 0,
+            gameType: room.gameType
+        });
+        
+        const typeMessages = {
+            public: 'Room is now public - visible in lobby browser and joinable by code',
+            private: 'Room is now private - only joinable by code',
+            locked: 'Room is now locked - no new players can join'
+        };
+        
+        io.to(room.roomCode).emit('room_type_changed', { 
+            roomType: room.roomType,
+            message: typeMessages[room.roomType]
+        });
+    });
+
+    socket.on('kick_player', ({ targetId }) => {
+        const room = findPlayerRoom(socket.id);
+        if (!room) {
+            socket.emit('error', 'Room not found');
+            return;
         }
+
+        const result = room.kickPlayer(socket.id, targetId);
+        
+        if (result.error) {
+            socket.emit('error', result.error);
+            return;
+        }
+
+        if (!result.wasBot) {
+            io.to(targetId).emit('kicked', { 
+                message: 'You have been kicked from the room by the host',
+                roomCode: room.roomCode
+            });
+
+            const kickedSocket = io.sockets.sockets.get(targetId);
+            if (kickedSocket) {
+                kickedSocket.leave(room.roomCode);
+            }
+        }
+
+        io.to(room.roomCode).emit('player_kicked', {
+            kickedPlayerName: result.kickedPlayerName,
+            wasBot: result.wasBot,
+            players: Array.from(room.players.entries()).map(([id, player]) => ({
+                id, 
+                name: player.name, 
+                isHost: player.isHost,
+                isReady: player.isReady,
+                isBot: player.isBot
+            })),
+            scoreboard: room.getScoreboardData(),
+            roomType: room.roomType,
+            botCount: room.bots.size,
+            usingCustomLocations: room.customLocations.length > 0,
+            gameType: room.gameType
+        });
     });
 
     socket.on('toggle_ready', () => {
-        const room = gameRooms.get(currentRoom);
+        const room = findPlayerRoom(socket.id);
         if (!room) return;
-        
-        const player = room.players.get(socket.id);
-        if (!player) return;
-        
-        player.isReady = !player.isReady;
-        
-        io.to(currentRoom).emit('room_updated', {
-            players: Array.from(room.players.entries()).map(([id, p]) => ({
-                id,
-                name: p.name,
-                isHost: p.isHost,
-                isReady: p.isReady,
-                isBot: p.isBot
-            })),
-            scoreboard: room.getScoreboardData(),
-            roomType: room.roomType,
-            botCount: room.bots.size,
-            usingCustomLocations: room.customLocations.length > 0,
-            gameType: room.gameType
-        });
-    });
 
-    socket.on('start_game', () => {
-        const room = gameRooms.get(currentRoom);
-        if (!room || room.hostId !== socket.id) return;
-        
-        if (room.startGame()) {
-            // Emit game started to all players in the room
-            io.to(currentRoom).emit('game_started', room.getGameStateForPlayer(socket.id));
-            
-            // Also emit individual game states to each player
-            room.players.forEach((player, playerSocketId) => {
-                const playerSocket = io.sockets.sockets.get(playerSocketId);
-                if (playerSocket) {
-                    playerSocket.emit('game_started', room.getGameStateForPlayer(playerSocketId));
-                }
+        const player = room.players.get(socket.id);
+        if (player && !player.isBot) {
+            player.isReady = !player.isReady;
+
+            io.to(room.roomCode).emit('room_updated', { 
+                players: Array.from(room.players.entries()).map(([id, player]) => ({
+                    id, 
+                    name: player.name, 
+                    isHost: player.isHost,
+                    isReady: player.isReady,
+                    isBot: player.isBot
+                })),
+                scoreboard: room.getScoreboardData(),
+                roomType: room.roomType,
+                botCount: room.bots.size,
+                usingCustomLocations: room.customLocations.length > 0,
+                gameType: room.gameType
             });
         }
     });
 
-    socket.on('ask_question', (data) => {
-        const room = gameRooms.get(currentRoom);
-        if (!room) return;
-        
-        const result = room.handleAskQuestion(socket.id, data.targetId);
-        if (result.success) {
-            io.to(currentRoom).emit('question_asked', result);
-            
-            const targetSocket = io.sockets.sockets.get(data.targetId);
-            if (targetSocket) {
-                targetSocket.emit('answer_question', {
-                    question: result.question,
-                    prompt: result.prompt,
-                    asker: result.asker
+    socket.on('start_game', (data) => {
+        const room = findPlayerRoom(socket.id);
+        if (!room || !room.players.get(socket.id)?.isHost) return;
+
+        // Handle custom locations for The Mole only
+        if (room.gameType === 'mole' && data && data.customLocations && Array.isArray(data.customLocations)) {
+            const removedBots = room.setCustomLocations(data.customLocations);
+            if (removedBots.length > 0) {
+                io.to(room.roomCode).emit('bots_removed_custom_locations', {
+                    removedBots,
+                    message: 'Bots removed due to custom locations'
                 });
             }
-        } else {
-            socket.emit('error', { message: result.error });
         }
-    });
 
-    socket.on('submit_answer', (data) => {
-        const room = gameRooms.get(currentRoom);
-        if (!room) return;
-        
-        const { question, answer } = data;
-        const currentQuestion = room.gameState.currentQuestion;
-        
-        if (currentQuestion && currentQuestion.targetId === socket.id) {
-            room.processAnswer(currentQuestion.askerId, socket.id, question, answer);
-            
-            io.to(currentRoom).emit('answer_submitted', {
-                asker: room.players.get(currentQuestion.askerId).name,
-                target: room.players.get(socket.id).name,
-                question,
-                answer
+        const humanPlayers = Array.from(room.players.values()).filter(p => !p.isBot);
+        const allHumansReady = humanPlayers.every(player => 
+            player.isHost || player.isReady
+        );
+
+        if (!allHumansReady) {
+            socket.emit('error', 'Not all human players are ready');
+            return;
+        }
+
+        if (room.startGame()) {
+            room.players.forEach((player, socketId) => {
+                if (!player.isBot) {
+                    io.to(socketId).emit('game_started', room.getGameStateForPlayer(socketId));
+                }
             });
-            
-            io.to(currentRoom).emit('game_state_update', room.getGameStateForPlayer(socket.id));
+
+            // Start the first turn
+            setTimeout(() => {
+                if (room.gameType === 'mole') {
+                    handleBotTurn(room);
+                } else {
+                    handleHintTurn(room);
+                }
+            }, 1000);
+        } else {
+            socket.emit('error', 'Need at least 3 players to start');
         }
     });
 
-    socket.on('give_hint', (data) => {
-        const room = gameRooms.get(currentRoom);
-        if (!room) return;
+    // The Mole question handling
+    socket.on('ask_question', ({ targetId }) => {
+        const room = findPlayerRoom(socket.id);
+        if (!room || room.gameState.status !== 'playing') return;
+
+        const result = room.handleAskQuestion(socket.id, targetId);
         
-        const result = room.handleGiveHint(socket.id, data.hint);
-        if (result.success) {
-            io.to(currentRoom).emit('hint_given', result);
-            io.to(currentRoom).emit('game_state_update', room.getGameStateForPlayer(socket.id));
-        } else {
-            socket.emit('error', { message: result.error });
+        if (result.error) {
+            socket.emit('error', result.error);
+            return;
         }
+
+        io.to(room.roomCode).emit('question_asked', result);
+
+        const targetPlayer = room.players.get(targetId);
+        if (targetPlayer && targetPlayer.isBot) {
+            setTimeout(() => {
+                const prompt = result.prompt || "";
+                const answer = room.generateBotAnswer(targetId, result.question, prompt);
+                
+                room.processAnswer(socket.id, targetId, result.question, answer);
+
+                io.to(room.roomCode).emit('answer_submitted', {
+                    asker: result.asker,
+                    target: result.target,
+                    question: result.question,
+                    answer
+                });
+
+                room.players.forEach((player, socketId) => {
+                    if (!player.isBot) {
+                        io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+                    }
+                });
+
+                setTimeout(() => {
+                    handleBotTurn(room);
+                }, 1000);
+            }, 1500);
+        }
+    });
+
+    socket.on('submit_answer', ({ asker, target, question, answer }) => {
+        const room = findPlayerRoom(socket.id);
+        if (!room) return;
+
+        let askerId = null;
+        if (room.gameState.currentQuestion && room.gameState.currentQuestion.targetId === socket.id) {
+            askerId = room.gameState.currentQuestion.askerId;
+        } else {
+            for (const [id, player] of room.players.entries()) {
+                if (player.name === asker) {
+                    askerId = id;
+                    break;
+                }
+            }
+        }
+
+        if (!askerId) {
+            console.error('Could not find asker ID for answer submission');
+            return;
+        }
+
+        console.log(`Answer submitted in room ${room.roomCode}: ${answer}`);
+
+        room.processAnswer(askerId, socket.id, question, answer);
+
+        io.to(room.roomCode).emit('answer_submitted', {
+            asker: room.players.get(askerId).name,
+            target: room.players.get(socket.id).name,
+            question,
+            answer
+        });
+
+        room.players.forEach((player, socketId) => {
+            if (!player.isBot) {
+                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+            }
+        });
+
+        setTimeout(() => {
+            handleBotTurn(room);
+        }, 1000);
+    });
+
+    // NEW: Hint handling for NBA/Rapper games
+    socket.on('give_hint', ({ hint }) => {
+        const room = findPlayerRoom(socket.id);
+        if (!room || room.gameState.status !== 'playing') return;
+
+        const result = room.handleGiveHint(socket.id, hint);
+        
+        if (result.error) {
+            socket.emit('error', result.error);
+            return;
+        }
+
+        io.to(room.roomCode).emit('hint_given', result);
+
+        room.players.forEach((player, socketId) => {
+            if (!player.isBot) {
+                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+            }
+        });
+
+        // Continue to next turn
+        setTimeout(() => {
+            handleHintTurn(room);
+        }, 1000);
     });
 
     socket.on('ready_to_vote', () => {
-        const room = gameRooms.get(currentRoom);
-        if (!room) return;
-        
+        const room = findPlayerRoom(socket.id);
+        if (!room || room.gameState.status !== 'playing') return;
+
         room.readyToVote(socket.id);
-        io.to(currentRoom).emit('game_state_update', room.getGameStateForPlayer(socket.id));
-    });
 
-    socket.on('submit_vote', (data) => {
-        const room = gameRooms.get(currentRoom);
-        if (!room) return;
-        
-        room.submitVote(socket.id, data.targetId, data.reasoning);
-        
-        if (room.gameState.status === 'ended') {
-            io.to(currentRoom).emit('game_ended', {
-                winner: room.gameState.gameResult.winner,
-                message: room.gameState.gameResult.message,
-                location: room.gameState.gameResult.location,
-                imposter: room.gameState.gameResult.imposter,
-                scoreboard: room.getScoreboardData()
+        io.to(room.roomCode).emit('ready_count_updated', {
+            readyCount: room.gameState.readyToVoteCount,
+            requiredCount: room.players.size - 1
+        });
+
+        if (room.gameState.status === 'voting') {
+            room.players.forEach((player, socketId) => {
+                if (!player.isBot) {
+                    io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+                }
             });
-        }
-    });
 
-    socket.on('imposter_guess', (data) => {
-        const room = gameRooms.get(currentRoom);
-        if (!room) return;
-        
-        room.imposterGuess(data.guess);
-        // Always emit game_ended after processing
-        if (room.gameState && room.gameState.status === 'ended') {
-            io.to(currentRoom).emit('game_ended', {
-                winner: room.gameState.gameResult.winner,
-                message: room.gameState.gameResult.message,
-                location: room.gameState.gameResult.location,
-                imposter: room.gameState.gameResult.imposter,
-                scoreboard: room.getScoreboardData()
-            });
-        }
-    });
-
-    socket.on('imposter_reveal', (data) => {
-        const room = gameRooms.get(currentRoom);
-        if (!room) return;
-        
-        room.imposterReveal(data.locationGuess);
-        // Always emit game_ended after processing
-        if (room.gameState && room.gameState.status === 'ended') {
-            io.to(currentRoom).emit('game_ended', {
-                winner: room.gameState.gameResult.winner,
-                message: room.gameState.gameResult.message,
-                location: room.gameState.gameResult.location,
-                imposter: room.gameState.gameResult.imposter,
-                scoreboard: room.getScoreboardData()
-            });
-        }
-    });
-
-    socket.on('add_bot', () => {
-        const room = gameRooms.get(currentRoom);
-        if (!room || room.hostId !== socket.id) return;
-        
-        const result = room.addBot();
-        if (result.success) {
-            io.to(currentRoom).emit('bot_added', result);
-            io.to(currentRoom).emit('room_updated', {
-                players: Array.from(room.players.entries()).map(([id, player]) => ({
-                    id,
-                    name: player.name,
-                    isHost: player.isHost,
-                    isReady: player.isReady,
-                    isBot: player.isBot
-                })),
-                scoreboard: room.getScoreboardData(),
-                roomType: room.roomType,
-                botCount: room.bots.size,
-                usingCustomLocations: room.customLocations.length > 0,
-                gameType: room.gameType
-            });
-        } else {
-            socket.emit('error', { message: result.error });
-        }
-    });
-
-    socket.on('remove_bot', (data) => {
-        const room = gameRooms.get(currentRoom);
-        if (!room || room.hostId !== socket.id) return;
-        
-        const result = room.removeBot(data.botId);
-        if (result.success) {
-            io.to(currentRoom).emit('bot_removed', result);
-            io.to(currentRoom).emit('room_updated', {
-                players: Array.from(room.players.entries()).map(([id, player]) => ({
-                    id,
-                    name: player.name,
-                    isHost: player.isHost,
-                    isReady: player.isReady,
-                    isBot: player.isBot
-                })),
-                scoreboard: room.getScoreboardData(),
-                roomType: room.roomType,
-                botCount: room.bots.size,
-                usingCustomLocations: room.customLocations.length > 0,
-                gameType: room.gameType
-            });
-        } else {
-            socket.emit('error', { message: result.error });
-        }
-    });
-
-    socket.on('kick_player', (data) => {
-        const room = gameRooms.get(currentRoom);
-        if (!room) return;
-        
-        const result = room.kickPlayer(socket.id, data.targetId);
-        if (result.success) {
-            const targetSocket = io.sockets.sockets.get(data.targetId);
-            if (targetSocket) {
-                targetSocket.emit('kicked', { message: 'You were kicked from the room' });
-                targetSocket.leave(currentRoom);
+            // Handle bot voting (only for The Mole)
+            if (room.gameType === 'mole') {
+                setTimeout(() => {
+                    for (const [botId, bot] of room.bots.entries()) {
+                        if (!room.gameState.votes.has(botId)) {
+                            room.handleBotVote(botId);
+                        }
+                    }
+                }, 2000);
             }
-            
-            io.to(currentRoom).emit('player_kicked', {
-                kickedPlayerName: result.kickedPlayerName,
-                wasBot: result.wasBot,
-                players: Array.from(room.players.entries()).map(([id, player]) => ({
-                    id,
-                    name: player.name,
-                    isHost: player.isHost,
-                    isReady: player.isReady,
-                    isBot: player.isBot
-                })),
-                scoreboard: room.getScoreboardData(),
-                roomType: room.roomType,
-                botCount: room.bots.size
-            });
-        } else {
-            socket.emit('error', { message: result.error });
         }
     });
 
-    socket.on('set_custom_locations', (data) => {
-        const room = gameRooms.get(currentRoom);
-        if (!room || room.hostId !== socket.id) return;
+    socket.on('submit_vote', ({ targetId, reasoning }) => {
+        const room = findPlayerRoom(socket.id);
+        if (!room || room.gameState.status !== 'voting') return;
+
+        room.submitVote(socket.id, targetId, reasoning);
+
+        const voterName = room.players.get(socket.id).name;
+        const targetName = room.players.get(targetId)?.name || 'Unknown';
         
-        const removedBots = room.setCustomLocations(data.locations);
-        
-        io.to(currentRoom).emit('custom_locations_set', {
-            locations: data.locations,
-            removedBots
+        io.to(room.roomCode).emit('vote_submitted', {
+            voter: voterName,
+            target: targetName,
+            votesReceived: room.gameState.votes.size,
+            totalPlayers: room.players.size
         });
-        
-        io.to(currentRoom).emit('room_updated', {
-            players: Array.from(room.players.entries()).map(([id, player]) => ({
-                id,
-                name: player.name,
-                isHost: player.isHost,
-                isReady: player.isReady,
-                isBot: player.isBot
-            })),
+
+        if (room.gameState.votes.size === room.players.size) {
+            io.to(room.roomCode).emit('all_votes_received');
+            
+            setTimeout(() => {
+                console.log(`Processing voting results for room ${room.roomCode}`);
+                
+                room.processVotingResults();
+                
+                console.log(`After processing votes: status=${room.gameState.status}`);
+                
+                room.players.forEach((player, socketId) => {
+                    if (!player.isBot) {
+                        const gameStateForPlayer = room.getGameStateForPlayer(socketId);
+                        console.log(`Sending game update to ${player.name}: status=${gameStateForPlayer.status}, round=${gameStateForPlayer.currentRound}`);
+                        io.to(socketId).emit('game_updated', gameStateForPlayer);
+                    }
+                });
+                
+                if (room.gameState.status === 'ended') {
+                    console.log('Game ended, sending game_over event');
+                    io.to(room.roomCode).emit('game_over', room.gameState.gameResult);
+                }
+            }, 2000);
+        }
+    });
+
+    // The Mole imposter reveal
+    socket.on('imposter_reveal', ({ locationGuess }) => {
+        const room = findPlayerRoom(socket.id);
+        if (!room || socket.id !== room.gameState.imposter) {
+            console.log(`Imposter reveal failed: room=${!!room}, isImposter=${socket.id === room?.gameState.imposter}`);
+            socket.emit('error', 'You are not the imposter');
+            return;
+        }
+
+        console.log(`Imposter reveal in room ${room.roomCode}: ${locationGuess}`);
+        room.imposterReveal(locationGuess);
+
+        room.players.forEach((player, socketId) => {
+            if (!player.isBot) {
+                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+            }
+        });
+    });
+
+    // NEW: NBA/Rapper imposter guess
+    socket.on('imposter_guess', ({ guess }) => {
+        const room = findPlayerRoom(socket.id);
+        if (!room || socket.id !== room.gameState.imposter) {
+            console.log(`Imposter guess failed: room=${!!room}, isImposter=${socket.id === room?.gameState.imposter}`);
+            socket.emit('error', 'You are not the imposter');
+            return;
+        }
+
+        console.log(`Imposter guess in room ${room.roomCode}: ${guess}`);
+        room.imposterGuess(guess);
+
+        room.players.forEach((player, socketId) => {
+            if (!player.isBot) {
+                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+            }
+        });
+    });
+
+    socket.on('request_scoreboard', () => {
+        const room = findPlayerRoom(socket.id);
+        if (!room) return;
+
+        socket.emit('scoreboard_updated', {
             scoreboard: room.getScoreboardData(),
-            roomType: room.roomType,
-            botCount: room.bots.size,
-            usingCustomLocations: room.customLocations.length > 0,
-            gameType: room.gameType
+            gameHistory: room.gameHistory
         });
+    });
+
+    socket.on('get_game_stats', () => {
+        const room = findPlayerRoom(socket.id);
+        if (!room) return;
+        
+        socket.emit('game_stats_updated', room.getGameStats());
     });
 
     socket.on('disconnect', () => {
-        console.log(`User disconnected: ${socket.id}`);
-        
-        if (currentRoom) {
-            const room = gameRooms.get(currentRoom);
-            if (room) {
-                const removedPlayer = room.removePlayer(socket.id);
-                
-                if (removedPlayer) {
-                    console.log(`${removedPlayer.name} left room ${currentRoom}`);
-                    
-                    if (room.players.size === 0) {
-                        console.log(`Room ${currentRoom} is empty, removing it`);
-                        gameRooms.delete(currentRoom);
-                    } else {
-                        io.to(currentRoom).emit('player_left', {
-                            playerName: removedPlayer.name,
-                            players: Array.from(room.players.entries()).map(([id, player]) => ({
-                                id,
-                                name: player.name,
-                                isHost: player.isHost,
-                                isReady: player.isReady,
-                                isBot: player.isBot
-                            })),
-                            scoreboard: room.getScoreboardData(),
-                            roomType: room.roomType,
-                            botCount: room.bots.size
+        console.log('User disconnected:', socket.id);
+        const room = findPlayerRoom(socket.id);
+        if (room) {
+            const player = room.removePlayer(socket.id);
+            
+            if (room.players.size === 0) {
+                gameRooms.delete(room.roomCode);
+                console.log(`Room ${room.roomCode} deleted (no players left)`);
+                // Emit updated public lobbies to all clients
+                const publicLobbies = [];
+                for (const [roomCode, room] of gameRooms.entries()) {
+                    if (room.roomType === 'public' && room.gameState.status === 'waiting') {
+                        publicLobbies.push({
+                            roomCode: room.roomCode,
+                            gameType: room.gameType,
+                            playerCount: room.players.size,
+                            maxPlayers: 8,
+                            hostName: Array.from(room.players.values()).find(p => p.isHost)?.name || 'Unknown',
+                            usingCustomLocations: room.customLocations.length > 0,
+                            botCount: room.bots.size,
+                            createdAt: room.createdAt
                         });
                     }
                 }
+                publicLobbies.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                io.emit('public_lobbies', publicLobbies.slice(0, 10));
+            } else {
+                io.to(room.roomCode).emit('player_left', {
+                    playerName: player?.name,
+                    players: Array.from(room.players.entries()).map(([id, player]) => ({
+                        id, 
+                        name: player.name, 
+                        isHost: player.isHost,
+                        isReady: player.isReady,
+                        isBot: player.isBot
+                    })),
+                    scoreboard: room.getScoreboardData(),
+                    roomType: room.roomType,
+                    botCount: room.bots.size,
+                    usingCustomLocations: room.customLocations.length > 0,
+                    gameType: room.gameType
+                });
             }
         }
     });
+
+    function findPlayerRoom(socketId) {
+        for (const room of gameRooms.values()) {
+            if (room.players.has(socketId)) {
+                return room;
+            }
+        }
+        return null;
+    }
 });
 
-function generateRoomCode() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = '';
-    for (let i = 0; i < 6; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
+// NEW: Handle hint turns for NBA/Rapper games
+function handleHintTurn(room) {
+    if (room.gameState.status !== 'playing' || room.gameType === 'mole') return;
+    
+    const currentPlayer = room.getCurrentPlayer();
+    const player = room.players.get(currentPlayer);
+    
+    if (!player) return;
+    
+    console.log(`${room.gameType.toUpperCase()} hint turn: ${player.name}`);
+    
+    // Notify the current player it's their turn
+    if (!player.isBot) {
+        io.to(currentPlayer).emit('your_hint_turn');
     }
-    return result;
+    // Note: No bots in NBA/Rapper games, so we don't handle bot hints
+}
+
+// Handle bot turns for The Mole (unchanged)
+function handleBotTurn(room) {
+    if (room.gameState.status !== 'playing' || room.gameType !== 'mole') return;
+    
+    const currentPlayer = room.getCurrentPlayer();
+    const player = room.players.get(currentPlayer);
+    
+    if (!player || !player.isBot) return;
+    
+    console.log(`Bot turn: ${player.name}`);
+    
+    if (!room.gameState.questionAskedThisTurn && !room.gameState.waitingForAnswer) {
+        setTimeout(() => {
+            const result = room.handleBotAskQuestion(currentPlayer);
+            
+            if (result && result.success) {
+                room.players.forEach((p, socketId) => {
+                    if (!p.isBot) {
+                        io.to(socketId).emit('question_asked', result);
+                    }
+                });
+                
+                const targetPlayer = room.players.get(result.targetId);
+                if (targetPlayer && targetPlayer.isBot) {
+                    setTimeout(() => {
+                        const prompt = result.prompt || "";
+                        const answer = room.generateBotAnswer(result.targetId, result.question, prompt);
+                        
+                        room.processAnswer(result.askerId, result.targetId, result.question, answer);
+                        
+                        room.players.forEach((p, socketId) => {
+                            if (!p.isBot) {
+                                io.to(socketId).emit('answer_submitted', {
+                                    asker: result.asker,
+                                    target: result.target,
+                                    question: result.question,
+                                    answer
+                                });
+                                
+                                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+                            }
+                        });
+                        
+                        setTimeout(() => {
+                            handleBotTurn(room);
+                        }, 1000);
+                    }, 1500);
+                }
+            } else {
+                console.log('Bot failed to ask question, skipping turn');
+                room.gameState.questionsThisRound++;
+                room.gameState.currentTurn = (room.gameState.currentTurn + 1) % room.playerOrder.length;
+                
+                setTimeout(() => {
+                    handleBotTurn(room);
+                }, 500);
+            }
+        }, 2000);
+    }
+    
+    if (room.gameState.questionsThisRound >= room.gameState.questionsPerRound) {
+        if (!room.gameState.readyToVotePlayers.has(currentPlayer)) {
+            const bot = room.bots.get(currentPlayer);
+            const shouldBeReady = bot ? shouldBotBeReadyToVote(bot, room) : false;
+            
+            if (shouldBeReady) {
+                setTimeout(() => {
+                    room.readyToVote(currentPlayer);
+                    
+                    room.players.forEach((p, socketId) => {
+                        if (!p.isBot) {
+                            io.to(socketId).emit('ready_count_updated', {
+                                readyCount: room.gameState.readyToVoteCount,
+                                requiredCount: room.players.size - 1
+                            });
+                        }
+                    });
+                    
+                    if (room.gameState.status === 'voting') {
+                        room.players.forEach((p, socketId) => {
+                            if (!p.isBot) {
+                                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+                            }
+                        });
+                        
+                        setTimeout(() => {
+                            for (const [botId, bot] of room.bots.entries()) {
+                                if (!room.gameState.votes.has(botId)) {
+                                    room.handleBotVote(botId);
+                                }
+                            }
+                        }, 2000);
+                    }
+                }, 3000);
+            }
+        }
+    }
+}
+
+function shouldBotBeReadyToVote(bot, room) {
+    const isImposter = room.playerOrder[room.gameState.currentTurn] === room.gameState.imposter;
+    
+    if (isImposter) {
+        return Math.random() < 0.3;
+    } else {
+        let maxSuspicion = 0;
+        let suspiciousPlayerCount = 0;
+        
+        for (const [playerId, suspicion] of bot.suspicion.entries()) {
+            if (suspicion > maxSuspicion) {
+                maxSuspicion = suspicion;
+            }
+            if (suspicion > 30) {
+                suspiciousPlayerCount++;
+            }
+        }
+        
+        const hasStrongSuspicion = maxSuspicion > 50;
+        const hasModerateEvidence = maxSuspicion > 25 && suspiciousPlayerCount <= 2;
+        const manyRounds = room.gameState.currentRound > 2;
+        
+        if (hasStrongSuspicion) return true;
+        if (hasModerateEvidence && Math.random() < 0.6) return true;
+        if (manyRounds && Math.random() < 0.4) return true;
+        
+        return false;
+    }
 }
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    console.log('Game Collection: The Mole, NBA Imposter, and Rapper Imposter');
+    console.log('Enhanced lobby system: Public, Private, and Locked rooms');
+    console.log('Bot support enabled for The Mole only');
 });

@@ -1011,8 +1011,6 @@
                 <div id="game-scoreboard-content"></div>
                 <button class="btn btn-info" onclick="showScoreboard()">View Full Scoreboard</button>
             </div>
-
-            <div class="game-log" id="game-log"></div>
         </div>
 
         <!-- Game Over Screen -->
@@ -1148,18 +1146,16 @@
         let currentSuggestions = [];
         let selectedSuggestionIndex = -1;
 
-        // Deduplicated locations
-        const locations = Array.from(new Set([
+        const locations = [
             "Circus", "Amusement Park", "Crashing Airplane", "Titanic",
             "Burning Orphanage", "Dingy Motel Drug Deal", "Prison", "Safari",
             "Zombie Apocalypse", "Organ-Harvesting Hospital", "Nuclear Submarine",
             "Daycare", "Amazon Rainforest", "Concert Hall", "Space Station",
             "High School", "Haunted Mansion", "Beach"
-        ]));
+        ];
 
-        // Deduplicated NBA players
-        const nbaPlayers = Array.from(new Set([
-            "Lebron James", "Kawhi Leonard", "Steph Curry", "Klay Thompson", "Damian Lillard", "Giannis Antetokounmpo", 
+        // NEW: Player lists for new games
+        const nbaPlayers = ["Lebron James", "Kawhi Leonard", "Steph Curry", "Klay Thompson", "Damian Lillard", "Giannis Antetokounmpo", 
             "Chris Paul", "Zion Williamson", "Ja Morant", "Scottie Barnes", "Chet Holmgren", "Paolo Banchero", 
             "Franz Wagner", "Gradey Dick", "Kyle Lowry", "DeMar DeRozan", "CJ McCollum", "Anthony Davis", 
             "Fred VanVleet", "Miles Bridges", "James Harden", "Russell Westbrook", "Joel Embiid", "Tyrese Maxey", 
@@ -1168,10 +1164,10 @@
             "Ben Simmons", "Nic Claxton", "Spencer Dinwiddie", "Jayson Tatum", "Jaylen Brown", "Derrick White", 
             "Jrue Holiday", "Kristaps Porzingis", "Al Horford", "Gary Trent Jr.", "Brook Lopez", "Khris Middleton", 
             "Bobby Portis", "Tyrese Haliburton", "Pascal Siakam", "Myles Turner", "Bennedict Mathurin", "Obi Toppin", 
-            "Darius Garland", "Donovan Mitchell", "Evan Mobley", "Jarrett Allen", "Zach LaVine", 
+            "Darius Garland", "Donovan Mitchell", "Evan Mobley", "Jarrett Allen", "DeMar DeRozan", "Zach LaVine", 
             "Nikola Vucevic", "Josh Giddey", "Cade Cunningham", "Jaden Ivey", "Ausar Thompson", "Jalen Duren", 
             "Tobias Harris", "Jimmy Butler", "Bam Adebayo", "Terry Rozier", "Tyler Herro", "Duncan Robinson", 
-            "Trae Young", "Clint Capela", "Zaccharie Risacher", "LaMelo Ball", "Brandon Miller", 
+            "Trae Young", "Clint Capela", "Zaccharie Risacher", "LaMelo Ball", "Miles Bridges", "Brandon Miller", 
             "Grant Williams", "Seth Curry", "Kyle Kuzma", "Jordan Poole", "Alex Sarr", "Shai Gilgeous-Alexander", 
             "Jalen Williams", "Lu Dort", "Alex Caruso", "Nikola Jokic", "Jamal Murray", "Michael Porter Jr.", 
             "Aaron Gordon", "Bruce Brown", "Anthony Edwards", "Mike Conley", "Rudy Gobert", "Karl-Anthony Towns", 
@@ -1183,17 +1179,13 @@
             "Lauri Markkanen", "Walker Kessler", "Jordan Clarkson", "Jaren Jackson Jr.", "Desmond Bane", 
             "Marcus Smart", "Zach Edey", "Victor Wembanyama", "Keldon Johnson", "Devin Vassell", "Jeremy Sochan", 
             "Anfernee Simons", "Scoot Henderson", "Deandre Ayton", "Jerami Grant", "Shaedon Sharpe", 
-            "Deni Avdija", "Cooper Flagg"
-        ]));
+            "Deni Avdija", "Cooper Flagg"];
 
-        // Deduplicated rappers
-        const rappers = Array.from(new Set([
-            "Drake", "Future", "21 Savage", "Travis Scott", "Kanye", "XXXTentacion", "Nav", "Roddy Ricch", "A Boogie wit da Hoodie", 
+        const rappers = ["Drake", "Future", "21 Savage", "Travis Scott", "Kanye", "XXXTentacion", "Nav", "Roddy Ricch", "A Boogie wit da Hoodie", 
             "Post Malone", "Lil Baby", "Lil Wayne", "Baby Keem", "Kendrick Lamar", "Lil Tecca", "Don Toliver", "Chris Brown", 
             "Coi Leray", "Nicki Minaj", "Cardi B", "DaBaby", "J. Cole", "Eminem", "Gunna", "Quavo", "Jay-Z", "Juice WRLD", "Big Black Banana Man", 
             "The Weeknd", "Kid Cudi", "Kodak Black", "Lil Durk", "Lil Skies", "Lil Tjay", "Lil Uzi Vert", "Meek Mill", "Nas", "PARTYNEXTDOOR",
-            "Offset", "Playboi Carti", "Polo G", "Pop Smoke", "Swae Lee", "Tory Lanez", "Young Thug", "Ty Dolla $ign"
-        ]));
+            "Offset", "PARTYNEXTDOOR", "Playboi Carti", "Polo G", "Pop Smoke", "Swae Lee", "Tory Lanez", "Young Thug", "Ty Dolla $ign", "Nicki Minaj"];
 
         // NEW: Game selection function
         function selectGame(gameType) {
@@ -1848,8 +1840,13 @@
                         </div>
                         <div class="public-lobby-details">
                             <div class="public-lobby-detail players">
-                                👥 ${lobby.playerCount}/8 players
+                                👥 ${lobby.playerCount}/${lobby.maxPlayers} players
                             </div>
+                            <div class="public-lobby-detail">
+                                👑 ${lobby.hostName}
+                            </div>
+                            ${lobby.botCount > 0 ? `<div class="public-lobby-detail bots">🤖 ${lobby.botCount} bots</div>` : ''}
+                            ${lobby.usingCustomLocations ? '<div class="public-lobby-detail custom">🎯 Custom locations</div>' : ''}
                             <div class="public-lobby-detail time">
                                 ⏰ ${timeAgo}
                             </div>
@@ -1993,7 +1990,6 @@
         });
 
         socket.on('game_started', (data) => {
-            console.log('Game started with data:', data);
             gameState = data;
             hasClickedReadyToVote = false;
             currentGameType = data.gameType;
@@ -2004,7 +2000,6 @@
             showScreen('game-screen');
             updateGameDisplay();
             updateGameLocations();
-            addToLog('🎮 Game started!');
             
             if (data.isImposter) {
                 addToLog('🎭 You are the IMPOSTER!');
@@ -2021,7 +2016,6 @@
         socket.on('hint_given', (data) => {
             const hintText = `💡 ${data.player}: "${data.hint}"`;
             document.getElementById('current-hint-display').innerHTML = hintText;
-            addToLog(hintText);
             
             gameState.hintsThisRound = data.hintsThisRound;
             gameState.currentTurn = data.currentTurn;
@@ -2042,10 +2036,6 @@
             document.getElementById('current-question').innerHTML = 
                 `<strong>${data.asker}</strong> asks <strong>${data.target}</strong>: "${data.question}"`;
             
-            addToLog(`❓ ${data.asker} asks ${data.target}: ${data.question}`);
-            
-            updateGameDisplay();
-            
             if (data.targetId === socket.id) {
                 document.getElementById('modal-question').innerHTML = 
                     `<strong>${data.asker}</strong> asks: "${data.question}"`;
@@ -2055,8 +2045,6 @@
         });
 
         socket.on('answer_submitted', (data) => {
-            addToLog(`💬 ${data.target}: ${data.answer}`);
-            
             if (gameState.currentQuestion && gameState.currentQuestion.asker === playerName) {
                 gameState.questionAskedThisTurn = false;
                 gameState.waitingForAnswer = false;
@@ -2080,8 +2068,6 @@
         });
 
         socket.on('vote_submitted', (data) => {
-            addToLog(`🗳️ ${data.voter} voted (${data.votesReceived}/${data.totalPlayers})`);
-            
             if (data.votesReceived === data.totalPlayers) {
                 roundEndScoreboard = {
                     round: gameState.currentRound,
@@ -2091,8 +2077,6 @@
         });
 
         socket.on('ready_count_updated', (data) => {
-            addToLog(`🗳️ ${data.readyCount}/${data.requiredCount} players ready to vote`);
-            
             if (gameState.status === 'playing') {
                 gameState.readyToVoteCount = data.readyCount;
                 updateGameDisplay();
@@ -2100,12 +2084,11 @@
         });
 
         socket.on('all_votes_received', () => {
-            addToLog('🗳️ All votes received! Processing results...');
+            // This event is no longer needed as we handle round end in game_updated
         });
 
         socket.on('game_over', (result) => {
             console.log('Game over event received:', result);
-            addToLog(`🏁 ${result.message}`);
             
             const YOUR_NAME = "Jace"; // <-- Change this to your player name
             if (playerName === YOUR_NAME) {
@@ -2129,22 +2112,6 @@
 
         socket.on('error', (message) => {
             showError(message);
-        });
-
-        socket.on('game_ended', (result) => {
-            // Use the same logic as game_over
-            console.log('Game ended event received:', result);
-            addToLog(`🏁 ${result.message}`);
-            gameState.gameResult = {
-                winner: result.winner,
-                message: result.message,
-                location: result.location,
-                imposter: result.imposter
-            };
-            if (result.scoreboard) {
-                scoreboardData = result.scoreboard;
-            }
-            showGameOver();
         });
 
         function updateLobbyPlayers(players) {
@@ -2182,32 +2149,24 @@
 
             const readyBtn = document.getElementById('ready-btn');
             const startBtn = document.getElementById('start-btn');
+            const lockBtn = document.getElementById('lock-btn');
             const customLocationsBtn = document.getElementById('custom-locations-btn');
             
-            // Host controls
             if (isHost) {
                 const humanPlayers = players.filter(p => !p.isBot);
-                const nonHostHumans = humanPlayers.filter(p => !p.isHost);
-                const allNonHostHumansReady = nonHostHumans.length > 0 && nonHostHumans.every(p => p.isReady);
+                const allHumansReady = humanPlayers.filter(p => !p.isHost).every(p => p.isReady);
                 const hasEnoughPlayers = players.length >= 3;
                 
-                // Host should NEVER see ready button
-                readyBtn.style.display = 'none';
-                
-                // Host sees start button only when others are ready and enough players
-                startBtn.style.display = (allNonHostHumansReady && hasEnoughPlayers) ? 'inline-block' : 'none';
-                
-                // Show custom locations button only for The Mole
+                startBtn.style.display = (allHumansReady && hasEnoughPlayers) ? 'inline-block' : 'none';
+                lockBtn.style.display = 'inline-block';
                 customLocationsBtn.style.display = currentGameType === 'mole' ? 'inline-block' : 'none';
+                readyBtn.style.display = 'none'; // Always hide ready button for host
             } else {
-                // Non-host controls
                 const currentPlayer = players.find(p => p.name === actualPlayerName);
                 readyBtn.textContent = currentPlayer?.isReady ? 'Cancel Ready' : 'Ready Up';
                 readyBtn.className = `btn ${currentPlayer?.isReady ? 'btn-warning' : 'btn-primary'}`;
-                readyBtn.style.display = 'inline-block';
-                
-                // Non-hosts never see start button
                 startBtn.style.display = 'none';
+                lockBtn.style.display = 'none';
                 customLocationsBtn.style.display = 'none';
             }
             
@@ -2585,15 +2544,6 @@
             }
 
             showScreen('game-over-screen');
-        }
-
-        function addToLog(message) {
-            const log = document.getElementById('game-log');
-            const entry = document.createElement('div');
-            entry.className = 'log-entry';
-            entry.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
-            log.appendChild(entry);
-            log.scrollTop = log.scrollHeight;
         }
 
         function showError(message) {
