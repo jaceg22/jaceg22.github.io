@@ -2131,6 +2131,22 @@
             showError(message);
         });
 
+        socket.on('game_ended', (result) => {
+            // Use the same logic as game_over
+            console.log('Game ended event received:', result);
+            addToLog(`🏁 ${result.message}`);
+            gameState.gameResult = {
+                winner: result.winner,
+                message: result.message,
+                location: result.location,
+                imposter: result.imposter
+            };
+            if (result.scoreboard) {
+                scoreboardData = result.scoreboard;
+            }
+            showGameOver();
+        });
+
         function updateLobbyPlayers(players) {
             const container = document.getElementById('lobby-players');
             container.innerHTML = '';
