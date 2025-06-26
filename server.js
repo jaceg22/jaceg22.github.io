@@ -858,7 +858,10 @@ class GameRoom {
         }
         
         // Count only human players (not bots)
-        const humanPlayerCount = Array.from(this.players.values()).filter(p => !p.isBot).length;
+        const humanPlayers = Array.from(this.players.entries()).filter(([id, p]) => !p.isBot);
+        const humanPlayerCount = humanPlayers.length;
+        console.log('Human players expected to vote:', humanPlayers.map(([id, p]) => `${p.name} (${id})`).join(', '));
+        console.log('Votes received:', Array.from(this.gameState.votes.entries()).map(([id, target]) => `${this.players.get(id)?.name} -> ${this.players.get(target)?.name}`).join(', '));
         if (this.gameState.votes.size === humanPlayerCount) {
             console.log('All votes received, processing results');
             this.processVotingResults();
@@ -884,6 +887,7 @@ class GameRoom {
     }
 
     processVotingResults() {
+        console.log('Processing voting results...');
         const voteCounts = new Map();
         
         this.gameState.votes.forEach((targetId) => {
@@ -904,7 +908,8 @@ class GameRoom {
             }
         });
 
-        const requiredVotes = this.players.size - 1;
+        const humanPlayers = Array.from(this.players.entries()).filter(([id, p]) => !p.isBot);
+        const requiredVotes = humanPlayers.length - 1;
         console.log(`Required votes: ${requiredVotes}, Max votes: ${maxVotes}`);
         
         if (maxVotes >= requiredVotes && mostVoted) {
