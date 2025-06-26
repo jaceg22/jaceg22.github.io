@@ -841,6 +841,8 @@ class GameRoom {
     }
 
     submitVote(voterId, targetId, reasoning = null) {
+        const voter = this.players.get(voterId);
+        if (!voter || voter.isBot) return;
         if (voterId === targetId) {
             console.log(`Player ${this.players.get(voterId).name} tried to vote for themselves - ignored`);
             return;
@@ -855,7 +857,9 @@ class GameRoom {
             voterStats.correctVotes++;
         }
         
-        if (this.gameState.votes.size === this.players.size) {
+        // Count only human players (not bots)
+        const humanPlayerCount = Array.from(this.players.values()).filter(p => !p.isBot).length;
+        if (this.gameState.votes.size === humanPlayerCount) {
             console.log('All votes received, processing results');
             this.processVotingResults();
         }
