@@ -570,6 +570,7 @@ class GameRoom {
         console.log(`${this.gameType === 'mole' ? 'Location' : this.gameType === 'nba' ? 'NBA Player' : 'Rapper'}: ${this.gameState.location}`);
         console.log(`Imposter: ${this.players.get(this.gameState.imposter).name}`);
         
+        // Reset all players and assign roles
         this.players.forEach((player, socketId) => {
             const stats = this.scoreboard.get(socketId);
             stats.gamesPlayed++;
@@ -1022,7 +1023,20 @@ class GameRoom {
         const isImposter = socketId === this.gameState.imposter;
         
         return {
-            ...this.gameState,
+            status: this.gameState.status,
+            location: this.gameState.location,
+            currentRound: this.gameState.currentRound,
+            currentTurn: this.gameState.currentTurn,
+            questionsThisRound: this.gameState.questionsThisRound,
+            hintsThisRound: this.gameState.hintsThisRound,
+            questionsPerRound: this.gameState.questionsPerRound,
+            hintsPerRound: this.gameState.hintsPerRound,
+            gameHistory: this.gameState.gameHistory,
+            currentQuestion: this.gameState.currentQuestion,
+            readyToVoteCount: this.gameState.readyToVoteCount,
+            readyToVotePlayers: Array.from(this.gameState.readyToVotePlayers),
+            questionAskedThisTurn: this.gameState.questionAskedThisTurn,
+            waitingForAnswer: this.gameState.waitingForAnswer,
             gameType: this.gameType,
             roomType: this.roomType,
             playerRole: player?.role,
@@ -1035,8 +1049,6 @@ class GameRoom {
             })),
             imposter: this.gameState.status === 'ended' ? this.gameState.imposter : null,
             scoreboard: this.getScoreboardData(),
-            readyToVoteCount: this.gameState.readyToVoteCount,
-            readyToVotePlayers: Array.from(this.gameState.readyToVotePlayers),
             gameStats: this.getGameStats(),
             botCount: this.bots.size,
             usingCustomLocations: this.customLocations.length > 0
@@ -1219,7 +1231,16 @@ io.on('connection', (socket) => {
         if (!room || room.hostId !== socket.id) return;
         
         if (room.startGame()) {
+            // Emit game started to all players in the room
             io.to(currentRoom).emit('game_started', room.getGameStateForPlayer(socket.id));
+            
+            // Also emit individual game states to each player
+            room.players.forEach((player, playerSocketId) => {
+                const playerSocket = io.sockets.sockets.get(playerSocketId);
+                if (playerSocket) {
+                    playerSocket.emit('game_started', room.getGameStateForPlayer(playerSocketId));
+                }
+            });
         }
     });
 

@@ -1842,13 +1842,8 @@
                         </div>
                         <div class="public-lobby-details">
                             <div class="public-lobby-detail players">
-                                👥 ${lobby.playerCount}/${lobby.maxPlayers} players
+                                👥 ${lobby.playerCount}/8 players
                             </div>
-                            <div class="public-lobby-detail">
-                                👑 ${lobby.hostName}
-                            </div>
-                            ${lobby.botCount > 0 ? `<div class="public-lobby-detail bots">🤖 ${lobby.botCount} bots</div>` : ''}
-                            ${lobby.usingCustomLocations ? '<div class="public-lobby-detail custom">🎯 Custom locations</div>' : ''}
                             <div class="public-lobby-detail time">
                                 ⏰ ${timeAgo}
                             </div>
@@ -1992,6 +1987,7 @@
         });
 
         socket.on('game_started', (data) => {
+            console.log('Game started with data:', data);
             gameState = data;
             hasClickedReadyToVote = false;
             currentGameType = data.gameType;
@@ -2164,24 +2160,32 @@
 
             const readyBtn = document.getElementById('ready-btn');
             const startBtn = document.getElementById('start-btn');
-            const lockBtn = document.getElementById('lock-btn');
             const customLocationsBtn = document.getElementById('custom-locations-btn');
             
+            // Host controls
             if (isHost) {
                 const humanPlayers = players.filter(p => !p.isBot);
-                const allHumansReady = humanPlayers.filter(p => !p.isHost).every(p => p.isReady);
+                const nonHostHumans = humanPlayers.filter(p => !p.isHost);
+                const allNonHostHumansReady = nonHostHumans.length > 0 && nonHostHumans.every(p => p.isReady);
                 const hasEnoughPlayers = players.length >= 3;
                 
-                startBtn.style.display = (allHumansReady && hasEnoughPlayers) ? 'inline-block' : 'none';
-                lockBtn.style.display = 'inline-block';
-                customLocationsBtn.style.display = currentGameType === 'mole' ? 'inline-block' : 'none';
+                // Host should NEVER see ready button
                 readyBtn.style.display = 'none';
+                
+                // Host sees start button only when others are ready and enough players
+                startBtn.style.display = (allNonHostHumansReady && hasEnoughPlayers) ? 'inline-block' : 'none';
+                
+                // Show custom locations button only for The Mole
+                customLocationsBtn.style.display = currentGameType === 'mole' ? 'inline-block' : 'none';
             } else {
+                // Non-host controls
                 const currentPlayer = players.find(p => p.name === actualPlayerName);
                 readyBtn.textContent = currentPlayer?.isReady ? 'Cancel Ready' : 'Ready Up';
                 readyBtn.className = `btn ${currentPlayer?.isReady ? 'btn-warning' : 'btn-primary'}`;
+                readyBtn.style.display = 'inline-block';
+                
+                // Non-hosts never see start button
                 startBtn.style.display = 'none';
-                lockBtn.style.display = 'none';
                 customLocationsBtn.style.display = 'none';
             }
             
