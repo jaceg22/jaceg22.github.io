@@ -803,29 +803,34 @@ class GameRoom {
     }
 
     readyToVote(playerId) {
-        if (this.gameState.readyToVotePlayers.has(playerId)) {
-            console.log(`Player ${this.players.get(playerId).name} already marked ready to vote`);
+        const player = this.players.get(playerId);
+        if (!player || player.isHost || player.isBot) {
+            // Only non-host, non-bot players can ready up
             return;
         }
-
+        if (this.gameState.readyToVotePlayers.has(playerId)) {
+            console.log(`Player ${player.name} already marked ready to vote`);
+            return;
+        }
         this.gameState.readyToVotePlayers.add(playerId);
-        this.gameState.readyToVoteCount++;
-        
-        console.log(`${this.players.get(playerId).name} is ready to vote. Count: ${this.gameState.readyToVoteCount}/${this.players.size - 1}`);
-
+        this.gameState.readyToVoteCount = this.gameState.readyToVotePlayers.size;
+        // Calculate required count: all non-host, non-bot players
+        const requiredCount = Array.from(this.players.values()).filter(p => !p.isHost && !p.isBot).length;
+        console.log(`${player.name} is ready to vote. Count: ${this.gameState.readyToVoteCount}/${requiredCount}`);
         // Emit ready count update
-        const room = this;
-        const ioRef = typeof io !== 'undefined' ? io : require('socket.io')(server);
-        if (room && room.roomCode) {
-            ioRef.to(room.roomCode).emit('ready_count_updated', {
+        if (this.roomCode) {
+            io.to(this.roomCode).emit('ready_count_updated', {
                 readyCount: this.gameState.readyToVoteCount,
-                requiredCount: this.players.size - 1
+                requiredCount
             });
         }
-
-        if (this.gameState.readyToVoteCount >= this.players.size - 1) {
+        if (this.gameState.readyToVoteCount >= requiredCount) {
             console.log('Enough players ready, starting voting phase');
             this.startVoting();
+            // Notify all clients to show voting
+            if (this.roomCode) {
+                io.to(this.roomCode).emit('game_updated', this.getGameStateForPlayer(this.hostId));
+            }
         }
     }
 
@@ -1343,14 +1348,16 @@ io.on('connection', (socket) => {
         if (!room) return;
         
         room.imposterGuess(data.guess);
-        
-        io.to(currentRoom).emit('game_ended', {
-            winner: room.gameState.gameResult.winner,
-            message: room.gameState.gameResult.message,
-            location: room.gameState.gameResult.location,
-            imposter: room.gameState.gameResult.imposter,
-            scoreboard: room.getScoreboardData()
-        });
+        // Always emit game_ended after processing
+        if (room.gameState && room.gameState.status === 'ended') {
+            io.to(currentRoom).emit('game_ended', {
+                winner: room.gameState.gameResult.winner,
+                message: room.gameState.gameResult.message,
+                location: room.gameState.gameResult.location,
+                imposter: room.gameState.gameResult.imposter,
+                scoreboard: room.getScoreboardData()
+            });
+        }
     });
 
     socket.on('imposter_reveal', (data) => {
@@ -1358,14 +1365,16 @@ io.on('connection', (socket) => {
         if (!room) return;
         
         room.imposterReveal(data.locationGuess);
-        
-        io.to(currentRoom).emit('game_ended', {
-            winner: room.gameState.gameResult.winner,
-            message: room.gameState.gameResult.message,
-            location: room.gameState.gameResult.location,
-            imposter: room.gameState.gameResult.imposter,
-            scoreboard: room.getScoreboardData()
-        });
+        // Always emit game_ended after processing
+        if (room.gameState && room.gameState.status === 'ended') {
+            io.to(currentRoom).emit('game_ended', {
+                winner: room.gameState.gameResult.winner,
+                message: room.gameState.gameResult.message,
+                location: room.gameState.gameResult.location,
+                imposter: room.gameState.gameResult.imposter,
+                scoreboard: room.getScoreboardData()
+            });
+        }
     });
 
     socket.on('add_bot', () => {
