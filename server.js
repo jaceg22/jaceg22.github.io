@@ -3,7 +3,6 @@ const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
 const fs = require('fs');
-const allGameData = [];
 
 const app = express();
 const server = http.createServer(app);
@@ -11,83 +10,6 @@ const io = socketIo(server);
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
-
-// Enhanced lobby endpoint to get public lobbies
-app.get('/api/public-lobbies', (req, res) => {
-    const publicLobbies = [];
-    
-    for (const [roomCode, room] of gameRooms.entries()) {
-        if (room.roomType === 'public' && room.gameState.status === 'waiting') {
-            publicLobbies.push({
-                roomCode: room.roomCode,
-                gameType: room.gameType,
-                playerCount: room.players.size,
-                maxPlayers: 8,
-                hostName: Array.from(room.players.values()).find(p => p.isHost)?.name || 'Unknown',
-                usingCustomLocations: room.customLocations.length > 0,
-                botCount: room.bots.size,
-                createdAt: room.createdAt
-            });
-        }
-    }
-    
-    // Sort by creation time (newest first) and limit to 10
-    publicLobbies.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    res.json(publicLobbies.slice(0, 10));
-});
-
-app.get('/download-all-games', (req, res) => {
-    if (allGameData.length === 0) {
-        res.status(404).send('No game data available yet');
-        return;
-    }
-
-    let output = '';
-    allGameData.forEach(gameData => {
-        output += '============================================================\n';
-        output += `GAME ${gameData.gameNumber}\n`;
-        output += `Game Type: ${gameData.gameType}\n`;
-        output += `Timestamp: ${gameData.timestamp}\n`;
-        output += `Room: ${gameData.roomCode}\n`;
-        output += `${gameData.gameType === 'mole' ? 'Location' : gameData.gameType === 'nba' ? 'NBA Player' : 'Rapper'}: ${gameData.location}\n`;
-        output += `Imposter: ${gameData.imposter}\n`;
-        output += `Outcome: ${gameData.outcome}\n`;
-        output += '\n';
-        
-        if (gameData.gameType === 'mole') {
-            output += 'QUESTIONS AND ANSWERS:\n';
-            gameData.playerQAs.forEach(qa => {
-                output += `${qa.asker} asks ${qa.target}: "${qa.question}"\n`;
-                output += `${qa.target} (${qa.targetRole}): "${qa.answer}"\n`;
-                output += '\n';
-            });
-        } else {
-            output += 'HINTS:\n';
-            gameData.playerHints.forEach(hint => {
-                output += `${hint.player} (${hint.playerRole}): "${hint.hint}"\n`;
-                output += '\n';
-            });
-        }
-        
-        output += 'VOTES:\n';
-        gameData.playerVotes.forEach(vote => {
-            const correctText = vote.wasCorrect ? 'CORRECT' : 'WRONG';
-            output += `${vote.voter} votes for ${vote.votedFor} (${correctText})\n`;
-            if (vote.reasoning) {
-                output += `Reasoning: ${vote.reasoning}\n`;
-            }
-        });
-        
-        output += '============================================================\n\n';
-    });
-
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `game-collection-all-games-${timestamp}.txt`;
-    
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Type', 'text/plain');
-    res.send(output);
-});
 
 // Game configuration
 const defaultLocations = [
@@ -219,7 +141,7 @@ const questionPromptsMap = new Map(questionPrompts);
 // Store game rooms
 const gameRooms = new Map();
 
-// Bot AI logic (only for The Mole - unchanged)
+// Bot AI logic (only for The Mole)
 class BotAI {
     constructor(botId, difficulty = 'medium') {
         this.botId = botId;
@@ -383,9 +305,9 @@ class BotAI {
 class GameRoom {
     constructor(roomCode, gameType = 'mole', roomType = 'public') {
         this.roomCode = roomCode;
-        this.gameType = gameType; // Track game type
-        this.roomType = roomType; // NEW: Track room type (public, private, locked)
-        this.createdAt = new Date(); // NEW: Track creation time for sorting
+        this.gameType = gameType;
+        this.roomType = roomType;
+        this.createdAt = new Date();
         this.players = new Map();
         this.bots = new Map();
         this.gameState = {
@@ -413,19 +335,6 @@ class GameRoom {
         this.gameHistory = [];
         this.customLocations = [];
         this.botSuspicion = new Map();
-        
-        this.currentGameData = {
-            gameNumber: 1,
-            gameType: gameType,
-            location: null,
-            imposter: null,
-            playerQAs: [],
-            playerHints: [],
-            playerVotes: [],
-            outcome: null,
-            timestamp: null,
-            roomCode: this.roomCode
-        };
     }
 
     generateUniqueName(requestedName) {
@@ -451,7 +360,6 @@ class GameRoom {
         return uniqueName;
     }
 
-    // NEW: Set room type instead of just locked
     setRoomType(roomType) {
         if (['public', 'private', 'locked'].includes(roomType)) {
             this.roomType = roomType;
@@ -460,7 +368,6 @@ class GameRoom {
         return false;
     }
 
-    // NEW: Check if room is joinable
     isJoinable() {
         return this.roomType !== 'locked' && this.gameState.status === 'waiting' && this.players.size < 8;
     }
@@ -498,7 +405,6 @@ class GameRoom {
         return uniqueName;
     }
 
-    // Bot functions only work for The Mole
     addBot(difficulty = 'medium') {
         if (this.gameType !== 'mole') {
             return { error: 'Bots are only available for The Mole game' };
@@ -664,19 +570,6 @@ class GameRoom {
         console.log(`${this.gameType === 'mole' ? 'Location' : this.gameType === 'nba' ? 'NBA Player' : 'Rapper'}: ${this.gameState.location}`);
         console.log(`Imposter: ${this.players.get(this.gameState.imposter).name}`);
         
-        this.currentGameData = {
-            gameNumber: this.gameHistory.length + 1,
-            gameType: this.gameType,
-            location: this.gameState.location,
-            imposter: this.players.get(this.gameState.imposter).name,
-            playerQAs: [],
-            playerHints: [],
-            playerVotes: [],
-            outcome: null,
-            timestamp: new Date().toISOString(),
-            roomCode: this.roomCode
-        };
-        
         this.players.forEach((player, socketId) => {
             const stats = this.scoreboard.get(socketId);
             stats.gamesPlayed++;
@@ -709,7 +602,6 @@ class GameRoom {
         this.gameState.questionAskedThisTurn = false;
         this.gameState.waitingForAnswer = false;
         
-        // Initialize bot suspicion tracking (only for The Mole)
         if (this.gameType === 'mole') {
             this.botSuspicion.clear();
             for (const [botId, bot] of this.bots.entries()) {
@@ -747,7 +639,6 @@ class GameRoom {
         return { question, prompt };
     }
 
-    // The Mole question handling (unchanged)
     handleAskQuestion(askerId, targetId) {
         if (this.gameType !== 'mole') {
             return { error: 'Questions only available in The Mole game' };
@@ -792,7 +683,6 @@ class GameRoom {
         };
     }
 
-    // NEW: Hint handling for NBA/Rapper games
     handleGiveHint(playerId, hint) {
         if (this.gameType === 'mole') {
             return { error: 'Hints not available in The Mole game' };
@@ -807,16 +697,6 @@ class GameRoom {
 
         console.log(`Hint given in room ${this.roomCode}: ${playerName} says "${hint}"`);
 
-        // Save hint to game data
-        this.currentGameData.playerHints.push({
-            player: playerName,
-            hint: hint,
-            playerRole: player.role,
-            wasPlayerImposter: playerId === this.gameState.imposter,
-            round: this.gameState.currentRound
-        });
-
-        // Save to game history
         this.gameState.gameHistory.push({
             player: playerName,
             hint: hint,
@@ -883,17 +763,6 @@ class GameRoom {
             round: this.gameState.currentRound
         });
 
-        const targetPlayer = this.players.get(targetId);
-        this.currentGameData.playerQAs.push({
-            asker: this.players.get(askerId).name,
-            target: targetPlayer.name,
-            question: question,
-            answer: answer,
-            targetRole: targetPlayer.role,
-            wasTargetImposter: targetId === this.gameState.imposter,
-            round: this.gameState.currentRound
-        });
-
         const askerStats = this.scoreboard.get(askerId);
         const targetStats = this.scoreboard.get(targetId);
         askerStats.questionsAsked++;
@@ -905,7 +774,6 @@ class GameRoom {
         }
         this.gameState.playerAnswers.get(targetName).push(answer);
 
-        // Update bot suspicion levels
         for (const [botId, bot] of this.bots.entries()) {
             if (botId !== targetId) {
                 bot.updateSuspicion(
@@ -960,16 +828,6 @@ class GameRoom {
         
         console.log(`Vote submitted: ${this.players.get(voterId).name} votes for ${this.players.get(targetId)?.name || 'Unknown'}`);
         this.gameState.votes.set(voterId, targetId);
-        
-        const voterPlayer = this.players.get(voterId);
-        const targetPlayer = this.players.get(targetId);
-        this.currentGameData.playerVotes.push({
-            voter: voterPlayer.name,
-            votedFor: targetPlayer?.name || 'Unknown',
-            wasCorrect: targetId === this.gameState.imposter,
-            voterWasImposter: voterId === this.gameState.imposter,
-            reasoning: reasoning || null
-        });
         
         const voterStats = this.scoreboard.get(voterId);
         voterStats.totalVotes++;
@@ -1042,7 +900,6 @@ class GameRoom {
         }
     }
 
-    // NEW: Handle imposter guess for NBA/Rapper games
     imposterGuess(guess) {
         console.log(`Imposter guess: ${this.players.get(this.gameState.imposter).name} guessed ${guess} (correct: ${this.gameState.location})`);
         const wasCorrect = guess === this.gameState.location;
@@ -1057,7 +914,6 @@ class GameRoom {
         }
     }
 
-    // The Mole location reveal (unchanged)
     imposterReveal(locationGuess) {
         console.log(`Imposter reveal: ${this.players.get(this.gameState.imposter).name} guessed ${locationGuess} (correct: ${this.gameState.location})`);
         const wasCorrect = locationGuess === this.gameState.location;
@@ -1084,26 +940,10 @@ class GameRoom {
             imposter: this.players.get(this.gameState.imposter).name
         };
 
-        this.currentGameData.outcome = winner;
         this.updateScoreboardAfterGame(winner);
         this.saveGameToHistory();
-        this.saveGameData();
         
         console.log(`Game state after ending: status=${this.gameState.status}, winner=${winner}`);
-    }
-
-    saveGameData() {
-        if (this.gameType === 'mole' && this.currentGameData.playerQAs.length === 0) {
-            console.log('No Mole game data to save');
-            return;
-        }
-        if (this.gameType !== 'mole' && this.currentGameData.playerHints.length === 0) {
-            console.log('No hint game data to save');
-            return;
-        }
-    
-        allGameData.push(JSON.parse(JSON.stringify(this.currentGameData)));
-        console.log(`📊 Total games stored: ${allGameData.length} (available for download)`);
     }
 
     updateScoreboardAfterGame(winner) {
@@ -1184,7 +1024,7 @@ class GameRoom {
         return {
             ...this.gameState,
             gameType: this.gameType,
-            roomType: this.roomType, // NEW: Include room type
+            roomType: this.roomType,
             playerRole: player?.role,
             isImposter,
             playerOrder: this.playerOrder.map(id => ({
@@ -1204,61 +1044,47 @@ class GameRoom {
     }
 }
 
-function generateRoomCode() {
-    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    let result = '';
-    for (let i = 0; i < 6; i++) {
-        result += letters.charAt(Math.floor(Math.random() * letters.length));
-    }
-    return result;
-}
-
-// Socket.IO connection handling
+// Socket.IO event handlers
 io.on('connection', (socket) => {
-    console.log('User connected:', socket.id);
+    console.log(`User connected: ${socket.id}`);
+    
+    let currentRoom = null;
+    let playerName = null;
+    let gameType = null;
 
-    // NEW: Get public lobbies
-    socket.on('get_public_lobbies', () => {
-        const publicLobbies = [];
+    socket.on('create_room', (data) => {
+        const { playerName: name, gameType: type, roomType = 'public' } = data;
         
-        for (const [roomCode, room] of gameRooms.entries()) {
-            if (room.roomType === 'public' && room.gameState.status === 'waiting') {
-                publicLobbies.push({
-                    roomCode: room.roomCode,
-                    gameType: room.gameType,
-                    playerCount: room.players.size,
-                    maxPlayers: 8,
-                    hostName: Array.from(room.players.values()).find(p => p.isHost)?.name || 'Unknown',
-                    usingCustomLocations: room.customLocations.length > 0,
-                    botCount: room.bots.size,
-                    createdAt: room.createdAt
-                });
-            }
+        if (!name || !type) {
+            socket.emit('error', { message: 'Name and game type are required' });
+            return;
         }
-        
-        // Sort by creation time (newest first) and limit to 10
-        publicLobbies.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        socket.emit('public_lobbies', publicLobbies.slice(0, 10));
-    });
 
-    socket.on('create_room', ({ playerName, gameType = 'mole', roomType = 'public' }) => {
         const roomCode = generateRoomCode();
-        const room = new GameRoom(roomCode, gameType, roomType);
-        const actualName = room.addPlayer(socket.id, playerName, true);
+        const room = new GameRoom(roomCode, type, roomType);
+        
+        const actualName = room.addPlayer(socket.id, name, true);
         gameRooms.set(roomCode, room);
         
         socket.join(roomCode);
-        socket.emit('room_created', { 
-            roomCode, 
-            isHost: true, 
-            actualName, 
-            gameType,
-            roomType 
+        currentRoom = roomCode;
+        playerName = actualName;
+        gameType = type;
+        
+        console.log(`Room created: ${roomCode} (${type}) by ${actualName}`);
+        
+        socket.emit('room_created', {
+            roomCode,
+            isHost: true,
+            actualName,
+            gameType: type,
+            roomType: roomType
         });
-        socket.emit('room_updated', { 
+        
+        io.to(roomCode).emit('room_updated', {
             players: Array.from(room.players.entries()).map(([id, player]) => ({
-                id, 
-                name: player.name, 
+                id,
+                name: player.name,
                 isHost: player.isHost,
                 isReady: player.isReady,
                 isBot: player.isBot
@@ -1271,96 +1097,45 @@ io.on('connection', (socket) => {
         });
     });
 
-    socket.on('join_room', ({ roomCode, playerName, gameType }) => {
+    socket.on('join_room', (data) => {
+        const { roomCode, playerName: name, gameType: type } = data;
+        
+        if (!name || !roomCode) {
+            socket.emit('error', { message: 'Name and room code are required' });
+            return;
+        }
+
         const room = gameRooms.get(roomCode);
         if (!room) {
-            socket.emit('error', 'Room not found');
-            return;
-        }
-        
-        // Check if trying to join with wrong game type
-        if (room.gameType !== gameType) {
-            const gameNames = {
-                'mole': 'The Mole',
-                'nba': 'NBA Imposter', 
-                'rapper': 'Rapper Imposter'
-            };
-            socket.emit('error', `This room is playing ${gameNames[room.gameType]}, not ${gameNames[gameType]}`);
-            return;
-        }
-        
-        // NEW: Check room type and joinability
-        if (!room.isJoinable()) {
-            if (room.roomType === 'locked') {
-                socket.emit('error', 'Room is locked');
-            } else if (room.players.size >= 8) {
-                socket.emit('error', 'Room is full');
-            } else if (room.gameState.status !== 'waiting') {
-                socket.emit('error', 'Game already in progress');
-            } else {
-                socket.emit('error', 'Cannot join room');
-            }
+            socket.emit('error', { message: 'Room not found' });
             return;
         }
 
-        const actualName = room.addPlayer(socket.id, playerName);
+        if (!room.isJoinable()) {
+            socket.emit('error', { message: 'Room is not joinable' });
+            return;
+        }
+
+        const actualName = room.addPlayer(socket.id, name, false);
         socket.join(roomCode);
-        socket.emit('room_joined', { 
-            roomCode, 
-            isHost: false, 
+        currentRoom = roomCode;
+        playerName = actualName;
+        gameType = type || room.gameType;
+        
+        console.log(`Player joined: ${actualName} joined ${roomCode}`);
+        
+        socket.emit('room_joined', {
+            roomCode,
+            isHost: false,
             actualName,
             gameType: room.gameType,
-            roomType: room.roomType,
-            nameChanged: actualName !== playerName
+            roomType: room.roomType
         });
         
-        io.to(roomCode).emit('room_updated', { 
+        io.to(roomCode).emit('room_updated', {
             players: Array.from(room.players.entries()).map(([id, player]) => ({
-                id, 
-                name: player.name, 
-                isHost: player.isHost,
-                isReady: player.isReady,
-                isBot: player.isBot
-            })),
-            scoreboard: room.getScoreboardData(),
-            roomType: room.roomType,
-            botCount: room.bots.size,
-            usingCustomLocations: room.customLocations.length > 0,
-            gameType: room.gameType
-        });
-        
-        if (actualName !== playerName) {
-            socket.emit('name_changed', { 
-                originalName: playerName, 
-                newName: actualName 
-            });
-        }
-    });
-
-    // Bot management (only for The Mole)
-    socket.on('add_bot', ({ difficulty = 'medium' }) => {
-        const room = findPlayerRoom(socket.id);
-        if (!room || !room.players.get(socket.id)?.isHost) {
-            socket.emit('error', 'Only the host can add bots');
-            return;
-        }
-
-        const result = room.addBot(difficulty);
-        
-        if (result.error) {
-            socket.emit('error', result.error);
-            return;
-        }
-
-        io.to(room.roomCode).emit('bot_added', {
-            botName: result.botName,
-            botCount: room.bots.size
-        });
-
-        io.to(room.roomCode).emit('room_updated', { 
-            players: Array.from(room.players.entries()).map(([id, player]) => ({
-                id, 
-                name: player.name, 
+                id,
+                name: player.name,
                 isHost: player.isHost,
                 isReady: player.isReady,
                 isBot: player.isBot
@@ -1373,102 +1148,34 @@ io.on('connection', (socket) => {
         });
     });
 
-    // NEW: Change room type (replaces toggle_lock)
-    socket.on('change_room_type', ({ roomType }) => {
-        const room = findPlayerRoom(socket.id);
-        if (!room || !room.players.get(socket.id)?.isHost) {
-            socket.emit('error', 'Only the host can change room type');
-            return;
-        }
-
-        if (!room.setRoomType(roomType)) {
-            socket.emit('error', 'Invalid room type');
-            return;
-        }
+    socket.on('get_public_lobbies', () => {
+        const publicLobbies = Array.from(gameRooms.values())
+            .filter(room => room.roomType === 'public' && room.isJoinable())
+            .map(room => ({
+                roomCode: room.roomCode,
+                gameType: room.gameType,
+                playerCount: room.players.size,
+                createdAt: room.createdAt
+            }))
+            .sort((a, b) => b.createdAt - a.createdAt);
         
-        io.to(room.roomCode).emit('room_updated', { 
-            players: Array.from(room.players.entries()).map(([id, player]) => ({
-                id, 
-                name: player.name, 
-                isHost: player.isHost,
-                isReady: player.isReady,
-                isBot: player.isBot
-            })),
-            scoreboard: room.getScoreboardData(),
-            roomType: room.roomType,
-            botCount: room.bots.size,
-            usingCustomLocations: room.customLocations.length > 0,
-            gameType: room.gameType
-        });
-        
-        const typeMessages = {
-            public: 'Room is now public - visible in lobby browser and joinable by code',
-            private: 'Room is now private - only joinable by code',
-            locked: 'Room is now locked - no new players can join'
-        };
-        
-        io.to(room.roomCode).emit('room_type_changed', { 
-            roomType: room.roomType,
-            message: typeMessages[room.roomType]
-        });
+        socket.emit('public_lobbies', publicLobbies);
     });
 
-    socket.on('kick_player', ({ targetId }) => {
-        const room = findPlayerRoom(socket.id);
-        if (!room) {
-            socket.emit('error', 'Room not found');
-            return;
-        }
-
-        const result = room.kickPlayer(socket.id, targetId);
+    socket.on('change_room_type', (data) => {
+        const { roomType } = data;
+        const room = gameRooms.get(currentRoom);
         
-        if (result.error) {
-            socket.emit('error', result.error);
+        if (!room || room.hostId !== socket.id) {
+            socket.emit('error', { message: 'Only the host can change room type' });
             return;
         }
-
-        if (!result.wasBot) {
-            io.to(targetId).emit('kicked', { 
-                message: 'You have been kicked from the room by the host',
-                roomCode: room.roomCode
-            });
-
-            const kickedSocket = io.sockets.sockets.get(targetId);
-            if (kickedSocket) {
-                kickedSocket.leave(room.roomCode);
-            }
-        }
-
-        io.to(room.roomCode).emit('player_kicked', {
-            kickedPlayerName: result.kickedPlayerName,
-            wasBot: result.wasBot,
-            players: Array.from(room.players.entries()).map(([id, player]) => ({
-                id, 
-                name: player.name, 
-                isHost: player.isHost,
-                isReady: player.isReady,
-                isBot: player.isBot
-            })),
-            scoreboard: room.getScoreboardData(),
-            roomType: room.roomType,
-            botCount: room.bots.size,
-            usingCustomLocations: room.customLocations.length > 0,
-            gameType: room.gameType
-        });
-    });
-
-    socket.on('toggle_ready', () => {
-        const room = findPlayerRoom(socket.id);
-        if (!room) return;
-
-        const player = room.players.get(socket.id);
-        if (player && !player.isBot) {
-            player.isReady = !player.isReady;
-
-            io.to(room.roomCode).emit('room_updated', { 
+        
+        if (room.setRoomType(roomType)) {
+            io.to(currentRoom).emit('room_updated', {
                 players: Array.from(room.players.entries()).map(([id, player]) => ({
-                    id, 
-                    name: player.name, 
+                    id,
+                    name: player.name,
                     isHost: player.isHost,
                     isReady: player.isReady,
                     isBot: player.isBot
@@ -1482,480 +1189,305 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('start_game', (data) => {
-        const room = findPlayerRoom(socket.id);
-        if (!room || !room.players.get(socket.id)?.isHost) return;
-
-        // Handle custom locations for The Mole only
-        if (room.gameType === 'mole' && data && data.customLocations && Array.isArray(data.customLocations)) {
-            const removedBots = room.setCustomLocations(data.customLocations);
-            if (removedBots.length > 0) {
-                io.to(room.roomCode).emit('bots_removed_custom_locations', {
-                    removedBots,
-                    message: 'Bots removed due to custom locations'
-                });
-            }
-        }
-
-        const humanPlayers = Array.from(room.players.values()).filter(p => !p.isBot);
-        const allHumansReady = humanPlayers.every(player => 
-            player.isHost || player.isReady
-        );
-
-        if (!allHumansReady) {
-            socket.emit('error', 'Not all human players are ready');
-            return;
-        }
-
-        if (room.startGame()) {
-            room.players.forEach((player, socketId) => {
-                if (!player.isBot) {
-                    io.to(socketId).emit('game_started', room.getGameStateForPlayer(socketId));
-                }
-            });
-
-            // Start the first turn
-            setTimeout(() => {
-                if (room.gameType === 'mole') {
-                    handleBotTurn(room);
-                } else {
-                    handleHintTurn(room);
-                }
-            }, 1000);
-        } else {
-            socket.emit('error', 'Need at least 3 players to start');
-        }
-    });
-
-    // The Mole question handling
-    socket.on('ask_question', ({ targetId }) => {
-        const room = findPlayerRoom(socket.id);
-        if (!room || room.gameState.status !== 'playing') return;
-
-        const result = room.handleAskQuestion(socket.id, targetId);
-        
-        if (result.error) {
-            socket.emit('error', result.error);
-            return;
-        }
-
-        io.to(room.roomCode).emit('question_asked', result);
-
-        const targetPlayer = room.players.get(targetId);
-        if (targetPlayer && targetPlayer.isBot) {
-            setTimeout(() => {
-                const prompt = result.prompt || "";
-                const answer = room.generateBotAnswer(targetId, result.question, prompt);
-                
-                room.processAnswer(socket.id, targetId, result.question, answer);
-
-                io.to(room.roomCode).emit('answer_submitted', {
-                    asker: result.asker,
-                    target: result.target,
-                    question: result.question,
-                    answer
-                });
-
-                room.players.forEach((player, socketId) => {
-                    if (!player.isBot) {
-                        io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
-                    }
-                });
-
-                setTimeout(() => {
-                    handleBotTurn(room);
-                }, 1000);
-            }, 1500);
-        }
-    });
-
-    socket.on('submit_answer', ({ asker, target, question, answer }) => {
-        const room = findPlayerRoom(socket.id);
+    socket.on('toggle_ready', () => {
+        const room = gameRooms.get(currentRoom);
         if (!room) return;
-
-        let askerId = null;
-        if (room.gameState.currentQuestion && room.gameState.currentQuestion.targetId === socket.id) {
-            askerId = room.gameState.currentQuestion.askerId;
-        } else {
-            for (const [id, player] of room.players.entries()) {
-                if (player.name === asker) {
-                    askerId = id;
-                    break;
-                }
-            }
-        }
-
-        if (!askerId) {
-            console.error('Could not find asker ID for answer submission');
-            return;
-        }
-
-        console.log(`Answer submitted in room ${room.roomCode}: ${answer}`);
-
-        room.processAnswer(askerId, socket.id, question, answer);
-
-        io.to(room.roomCode).emit('answer_submitted', {
-            asker: room.players.get(askerId).name,
-            target: room.players.get(socket.id).name,
-            question,
-            answer
+        
+        const player = room.players.get(socket.id);
+        if (!player) return;
+        
+        player.isReady = !player.isReady;
+        
+        io.to(currentRoom).emit('room_updated', {
+            players: Array.from(room.players.entries()).map(([id, p]) => ({
+                id,
+                name: p.name,
+                isHost: p.isHost,
+                isReady: p.isReady,
+                isBot: p.isBot
+            })),
+            scoreboard: room.getScoreboardData(),
+            roomType: room.roomType,
+            botCount: room.bots.size,
+            usingCustomLocations: room.customLocations.length > 0,
+            gameType: room.gameType
         });
-
-        room.players.forEach((player, socketId) => {
-            if (!player.isBot) {
-                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
-            }
-        });
-
-        setTimeout(() => {
-            handleBotTurn(room);
-        }, 1000);
     });
 
-    // NEW: Hint handling for NBA/Rapper games
-    socket.on('give_hint', ({ hint }) => {
-        const room = findPlayerRoom(socket.id);
-        if (!room || room.gameState.status !== 'playing') return;
-
-        const result = room.handleGiveHint(socket.id, hint);
+    socket.on('start_game', () => {
+        const room = gameRooms.get(currentRoom);
+        if (!room || room.hostId !== socket.id) return;
         
-        if (result.error) {
-            socket.emit('error', result.error);
-            return;
+        if (room.startGame()) {
+            io.to(currentRoom).emit('game_started', room.getGameStateForPlayer(socket.id));
         }
+    });
 
-        io.to(room.roomCode).emit('hint_given', result);
-
-        room.players.forEach((player, socketId) => {
-            if (!player.isBot) {
-                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+    socket.on('ask_question', (data) => {
+        const room = gameRooms.get(currentRoom);
+        if (!room) return;
+        
+        const result = room.handleAskQuestion(socket.id, data.targetId);
+        if (result.success) {
+            io.to(currentRoom).emit('question_asked', result);
+            
+            const targetSocket = io.sockets.sockets.get(data.targetId);
+            if (targetSocket) {
+                targetSocket.emit('answer_question', {
+                    question: result.question,
+                    prompt: result.prompt,
+                    asker: result.asker
+                });
             }
-        });
+        } else {
+            socket.emit('error', { message: result.error });
+        }
+    });
 
-        // Continue to next turn
-        setTimeout(() => {
-            handleHintTurn(room);
-        }, 1000);
+    socket.on('submit_answer', (data) => {
+        const room = gameRooms.get(currentRoom);
+        if (!room) return;
+        
+        const { question, answer } = data;
+        const currentQuestion = room.gameState.currentQuestion;
+        
+        if (currentQuestion && currentQuestion.targetId === socket.id) {
+            room.processAnswer(currentQuestion.askerId, socket.id, question, answer);
+            
+            io.to(currentRoom).emit('answer_submitted', {
+                asker: room.players.get(currentQuestion.askerId).name,
+                target: room.players.get(socket.id).name,
+                question,
+                answer
+            });
+            
+            io.to(currentRoom).emit('game_state_update', room.getGameStateForPlayer(socket.id));
+        }
+    });
+
+    socket.on('give_hint', (data) => {
+        const room = gameRooms.get(currentRoom);
+        if (!room) return;
+        
+        const result = room.handleGiveHint(socket.id, data.hint);
+        if (result.success) {
+            io.to(currentRoom).emit('hint_given', result);
+            io.to(currentRoom).emit('game_state_update', room.getGameStateForPlayer(socket.id));
+        } else {
+            socket.emit('error', { message: result.error });
+        }
     });
 
     socket.on('ready_to_vote', () => {
-        const room = findPlayerRoom(socket.id);
-        if (!room || room.gameState.status !== 'playing') return;
-
+        const room = gameRooms.get(currentRoom);
+        if (!room) return;
+        
         room.readyToVote(socket.id);
+        io.to(currentRoom).emit('game_state_update', room.getGameStateForPlayer(socket.id));
+    });
 
-        io.to(room.roomCode).emit('ready_count_updated', {
-            readyCount: room.gameState.readyToVoteCount,
-            requiredCount: room.players.size - 1
-        });
-
-        if (room.gameState.status === 'voting') {
-            room.players.forEach((player, socketId) => {
-                if (!player.isBot) {
-                    io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
-                }
+    socket.on('submit_vote', (data) => {
+        const room = gameRooms.get(currentRoom);
+        if (!room) return;
+        
+        room.submitVote(socket.id, data.targetId, data.reasoning);
+        
+        if (room.gameState.status === 'ended') {
+            io.to(currentRoom).emit('game_ended', {
+                winner: room.gameState.gameResult.winner,
+                message: room.gameState.gameResult.message,
+                location: room.gameState.gameResult.location,
+                imposter: room.gameState.gameResult.imposter,
+                scoreboard: room.getScoreboardData()
             });
-
-            // Handle bot voting (only for The Mole)
-            if (room.gameType === 'mole') {
-                setTimeout(() => {
-                    for (const [botId, bot] of room.bots.entries()) {
-                        if (!room.gameState.votes.has(botId)) {
-                            room.handleBotVote(botId);
-                        }
-                    }
-                }, 2000);
-            }
         }
     });
 
-    socket.on('submit_vote', ({ targetId, reasoning }) => {
-        const room = findPlayerRoom(socket.id);
-        if (!room || room.gameState.status !== 'voting') return;
-
-        room.submitVote(socket.id, targetId, reasoning);
-
-        const voterName = room.players.get(socket.id).name;
-        const targetName = room.players.get(targetId)?.name || 'Unknown';
+    socket.on('imposter_guess', (data) => {
+        const room = gameRooms.get(currentRoom);
+        if (!room) return;
         
-        io.to(room.roomCode).emit('vote_submitted', {
-            voter: voterName,
-            target: targetName,
-            votesReceived: room.gameState.votes.size,
-            totalPlayers: room.players.size
+        room.imposterGuess(data.guess);
+        
+        io.to(currentRoom).emit('game_ended', {
+            winner: room.gameState.gameResult.winner,
+            message: room.gameState.gameResult.message,
+            location: room.gameState.gameResult.location,
+            imposter: room.gameState.gameResult.imposter,
+            scoreboard: room.getScoreboardData()
         });
+    });
 
-        if (room.gameState.votes.size === room.players.size) {
-            io.to(room.roomCode).emit('all_votes_received');
+    socket.on('imposter_reveal', (data) => {
+        const room = gameRooms.get(currentRoom);
+        if (!room) return;
+        
+        room.imposterReveal(data.locationGuess);
+        
+        io.to(currentRoom).emit('game_ended', {
+            winner: room.gameState.gameResult.winner,
+            message: room.gameState.gameResult.message,
+            location: room.gameState.gameResult.location,
+            imposter: room.gameState.gameResult.imposter,
+            scoreboard: room.getScoreboardData()
+        });
+    });
+
+    socket.on('add_bot', () => {
+        const room = gameRooms.get(currentRoom);
+        if (!room || room.hostId !== socket.id) return;
+        
+        const result = room.addBot();
+        if (result.success) {
+            io.to(currentRoom).emit('bot_added', result);
+            io.to(currentRoom).emit('room_updated', {
+                players: Array.from(room.players.entries()).map(([id, player]) => ({
+                    id,
+                    name: player.name,
+                    isHost: player.isHost,
+                    isReady: player.isReady,
+                    isBot: player.isBot
+                })),
+                scoreboard: room.getScoreboardData(),
+                roomType: room.roomType,
+                botCount: room.bots.size,
+                usingCustomLocations: room.customLocations.length > 0,
+                gameType: room.gameType
+            });
+        } else {
+            socket.emit('error', { message: result.error });
+        }
+    });
+
+    socket.on('remove_bot', (data) => {
+        const room = gameRooms.get(currentRoom);
+        if (!room || room.hostId !== socket.id) return;
+        
+        const result = room.removeBot(data.botId);
+        if (result.success) {
+            io.to(currentRoom).emit('bot_removed', result);
+            io.to(currentRoom).emit('room_updated', {
+                players: Array.from(room.players.entries()).map(([id, player]) => ({
+                    id,
+                    name: player.name,
+                    isHost: player.isHost,
+                    isReady: player.isReady,
+                    isBot: player.isBot
+                })),
+                scoreboard: room.getScoreboardData(),
+                roomType: room.roomType,
+                botCount: room.bots.size,
+                usingCustomLocations: room.customLocations.length > 0,
+                gameType: room.gameType
+            });
+        } else {
+            socket.emit('error', { message: result.error });
+        }
+    });
+
+    socket.on('kick_player', (data) => {
+        const room = gameRooms.get(currentRoom);
+        if (!room) return;
+        
+        const result = room.kickPlayer(socket.id, data.targetId);
+        if (result.success) {
+            const targetSocket = io.sockets.sockets.get(data.targetId);
+            if (targetSocket) {
+                targetSocket.emit('kicked', { message: 'You were kicked from the room' });
+                targetSocket.leave(currentRoom);
+            }
             
-            setTimeout(() => {
-                console.log(`Processing voting results for room ${room.roomCode}`);
-                
-                room.processVotingResults();
-                
-                console.log(`After processing votes: status=${room.gameState.status}`);
-                
-                room.players.forEach((player, socketId) => {
-                    if (!player.isBot) {
-                        const gameStateForPlayer = room.getGameStateForPlayer(socketId);
-                        console.log(`Sending game update to ${player.name}: status=${gameStateForPlayer.status}, round=${gameStateForPlayer.currentRound}`);
-                        io.to(socketId).emit('game_updated', gameStateForPlayer);
-                    }
-                });
-                
-                if (room.gameState.status === 'ended') {
-                    console.log('Game ended, sending game_over event');
-                    io.to(room.roomCode).emit('game_over', room.gameState.gameResult);
-                }
-            }, 2000);
+            io.to(currentRoom).emit('player_kicked', {
+                kickedPlayerName: result.kickedPlayerName,
+                wasBot: result.wasBot,
+                players: Array.from(room.players.entries()).map(([id, player]) => ({
+                    id,
+                    name: player.name,
+                    isHost: player.isHost,
+                    isReady: player.isReady,
+                    isBot: player.isBot
+                })),
+                scoreboard: room.getScoreboardData(),
+                roomType: room.roomType,
+                botCount: room.bots.size
+            });
+        } else {
+            socket.emit('error', { message: result.error });
         }
     });
 
-    // The Mole imposter reveal
-    socket.on('imposter_reveal', ({ locationGuess }) => {
-        const room = findPlayerRoom(socket.id);
-        if (!room || socket.id !== room.gameState.imposter) {
-            console.log(`Imposter reveal failed: room=${!!room}, isImposter=${socket.id === room?.gameState.imposter}`);
-            socket.emit('error', 'You are not the imposter');
-            return;
-        }
-
-        console.log(`Imposter reveal in room ${room.roomCode}: ${locationGuess}`);
-        room.imposterReveal(locationGuess);
-
-        room.players.forEach((player, socketId) => {
-            if (!player.isBot) {
-                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
-            }
-        });
-    });
-
-    // NEW: NBA/Rapper imposter guess
-    socket.on('imposter_guess', ({ guess }) => {
-        const room = findPlayerRoom(socket.id);
-        if (!room || socket.id !== room.gameState.imposter) {
-            console.log(`Imposter guess failed: room=${!!room}, isImposter=${socket.id === room?.gameState.imposter}`);
-            socket.emit('error', 'You are not the imposter');
-            return;
-        }
-
-        console.log(`Imposter guess in room ${room.roomCode}: ${guess}`);
-        room.imposterGuess(guess);
-
-        room.players.forEach((player, socketId) => {
-            if (!player.isBot) {
-                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
-            }
-        });
-    });
-
-    socket.on('request_scoreboard', () => {
-        const room = findPlayerRoom(socket.id);
-        if (!room) return;
-
-        socket.emit('scoreboard_updated', {
-            scoreboard: room.getScoreboardData(),
-            gameHistory: room.gameHistory
-        });
-    });
-
-    socket.on('get_game_stats', () => {
-        const room = findPlayerRoom(socket.id);
-        if (!room) return;
+    socket.on('set_custom_locations', (data) => {
+        const room = gameRooms.get(currentRoom);
+        if (!room || room.hostId !== socket.id) return;
         
-        socket.emit('game_stats_updated', room.getGameStats());
+        const removedBots = room.setCustomLocations(data.locations);
+        
+        io.to(currentRoom).emit('custom_locations_set', {
+            locations: data.locations,
+            removedBots
+        });
+        
+        io.to(currentRoom).emit('room_updated', {
+            players: Array.from(room.players.entries()).map(([id, player]) => ({
+                id,
+                name: player.name,
+                isHost: player.isHost,
+                isReady: player.isReady,
+                isBot: player.isBot
+            })),
+            scoreboard: room.getScoreboardData(),
+            roomType: room.roomType,
+            botCount: room.bots.size,
+            usingCustomLocations: room.customLocations.length > 0,
+            gameType: room.gameType
+        });
     });
 
     socket.on('disconnect', () => {
-        console.log('User disconnected:', socket.id);
-        const room = findPlayerRoom(socket.id);
-        if (room) {
-            const player = room.removePlayer(socket.id);
-            
-            if (room.players.size === 0) {
-                gameRooms.delete(room.roomCode);
-                console.log(`Room ${room.roomCode} deleted (no players left)`);
-            } else {
-                io.to(room.roomCode).emit('player_left', {
-                    playerName: player?.name,
-                    players: Array.from(room.players.entries()).map(([id, player]) => ({
-                        id, 
-                        name: player.name, 
-                        isHost: player.isHost,
-                        isReady: player.isReady,
-                        isBot: player.isBot
-                    })),
-                    scoreboard: room.getScoreboardData(),
-                    roomType: room.roomType,
-                    botCount: room.bots.size,
-                    usingCustomLocations: room.customLocations.length > 0,
-                    gameType: room.gameType
-                });
+        console.log(`User disconnected: ${socket.id}`);
+        
+        if (currentRoom) {
+            const room = gameRooms.get(currentRoom);
+            if (room) {
+                const removedPlayer = room.removePlayer(socket.id);
+                
+                if (removedPlayer) {
+                    console.log(`${removedPlayer.name} left room ${currentRoom}`);
+                    
+                    if (room.players.size === 0) {
+                        console.log(`Room ${currentRoom} is empty, removing it`);
+                        gameRooms.delete(currentRoom);
+                    } else {
+                        io.to(currentRoom).emit('player_left', {
+                            playerName: removedPlayer.name,
+                            players: Array.from(room.players.entries()).map(([id, player]) => ({
+                                id,
+                                name: player.name,
+                                isHost: player.isHost,
+                                isReady: player.isReady,
+                                isBot: player.isBot
+                            })),
+                            scoreboard: room.getScoreboardData(),
+                            roomType: room.roomType,
+                            botCount: room.bots.size
+                        });
+                    }
+                }
             }
         }
     });
-
-    function findPlayerRoom(socketId) {
-        for (const room of gameRooms.values()) {
-            if (room.players.has(socketId)) {
-                return room;
-            }
-        }
-        return null;
-    }
 });
 
-// NEW: Handle hint turns for NBA/Rapper games
-function handleHintTurn(room) {
-    if (room.gameState.status !== 'playing' || room.gameType === 'mole') return;
-    
-    const currentPlayer = room.getCurrentPlayer();
-    const player = room.players.get(currentPlayer);
-    
-    if (!player) return;
-    
-    console.log(`${room.gameType.toUpperCase()} hint turn: ${player.name}`);
-    
-    // Notify the current player it's their turn
-    if (!player.isBot) {
-        io.to(currentPlayer).emit('your_hint_turn');
+function generateRoomCode() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < 6; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
-    // Note: No bots in NBA/Rapper games, so we don't handle bot hints
-}
-
-// Handle bot turns for The Mole (unchanged)
-function handleBotTurn(room) {
-    if (room.gameState.status !== 'playing' || room.gameType !== 'mole') return;
-    
-    const currentPlayer = room.getCurrentPlayer();
-    const player = room.players.get(currentPlayer);
-    
-    if (!player || !player.isBot) return;
-    
-    console.log(`Bot turn: ${player.name}`);
-    
-    if (!room.gameState.questionAskedThisTurn && !room.gameState.waitingForAnswer) {
-        setTimeout(() => {
-            const result = room.handleBotAskQuestion(currentPlayer);
-            
-            if (result && result.success) {
-                room.players.forEach((p, socketId) => {
-                    if (!p.isBot) {
-                        io.to(socketId).emit('question_asked', result);
-                    }
-                });
-                
-                const targetPlayer = room.players.get(result.targetId);
-                if (targetPlayer && targetPlayer.isBot) {
-                    setTimeout(() => {
-                        const prompt = result.prompt || "";
-                        const answer = room.generateBotAnswer(result.targetId, result.question, prompt);
-                        
-                        room.processAnswer(result.askerId, result.targetId, result.question, answer);
-                        
-                        room.players.forEach((p, socketId) => {
-                            if (!p.isBot) {
-                                io.to(socketId).emit('answer_submitted', {
-                                    asker: result.asker,
-                                    target: result.target,
-                                    question: result.question,
-                                    answer
-                                });
-                                
-                                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
-                            }
-                        });
-                        
-                        setTimeout(() => {
-                            handleBotTurn(room);
-                        }, 1000);
-                    }, 1500);
-                }
-            } else {
-                console.log('Bot failed to ask question, skipping turn');
-                room.gameState.questionsThisRound++;
-                room.gameState.currentTurn = (room.gameState.currentTurn + 1) % room.playerOrder.length;
-                
-                setTimeout(() => {
-                    handleBotTurn(room);
-                }, 500);
-            }
-        }, 2000);
-    }
-    
-    if (room.gameState.questionsThisRound >= room.gameState.questionsPerRound) {
-        if (!room.gameState.readyToVotePlayers.has(currentPlayer)) {
-            const bot = room.bots.get(currentPlayer);
-            const shouldBeReady = bot ? shouldBotBeReadyToVote(bot, room) : false;
-            
-            if (shouldBeReady) {
-                setTimeout(() => {
-                    room.readyToVote(currentPlayer);
-                    
-                    room.players.forEach((p, socketId) => {
-                        if (!p.isBot) {
-                            io.to(socketId).emit('ready_count_updated', {
-                                readyCount: room.gameState.readyToVoteCount,
-                                requiredCount: room.players.size - 1
-                            });
-                        }
-                    });
-                    
-                    if (room.gameState.status === 'voting') {
-                        room.players.forEach((p, socketId) => {
-                            if (!p.isBot) {
-                                io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
-                            }
-                        });
-                        
-                        setTimeout(() => {
-                            for (const [botId, bot] of room.bots.entries()) {
-                                if (!room.gameState.votes.has(botId)) {
-                                    room.handleBotVote(botId);
-                                }
-                            }
-                        }, 2000);
-                    }
-                }, 3000);
-            }
-        }
-    }
-}
-
-function shouldBotBeReadyToVote(bot, room) {
-    const isImposter = room.playerOrder[room.gameState.currentTurn] === room.gameState.imposter;
-    
-    if (isImposter) {
-        return Math.random() < 0.3;
-    } else {
-        let maxSuspicion = 0;
-        let suspiciousPlayerCount = 0;
-        
-        for (const [playerId, suspicion] of bot.suspicion.entries()) {
-            if (suspicion > maxSuspicion) {
-                maxSuspicion = suspicion;
-            }
-            if (suspicion > 30) {
-                suspiciousPlayerCount++;
-            }
-        }
-        
-        const hasStrongSuspicion = maxSuspicion > 50;
-        const hasModerateEvidence = maxSuspicion > 25 && suspiciousPlayerCount <= 2;
-        const manyRounds = room.gameState.currentRound > 2;
-        
-        if (hasStrongSuspicion) return true;
-        if (hasModerateEvidence && Math.random() < 0.6) return true;
-        if (manyRounds && Math.random() < 0.4) return true;
-        
-        return false;
-    }
+    return result;
 }
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
-    console.log('Game Collection: The Mole, NBA Imposter, and Rapper Imposter');
-    console.log('Enhanced lobby system: Public, Private, and Locked rooms');
-    console.log('Bot support enabled for The Mole only');
 });
