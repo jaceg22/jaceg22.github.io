@@ -12,16 +12,17 @@ const io = socketIo(server);
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Game configuration
-const defaultLocations = [
+const defaultLocations = Array.from(new Set([
     "Circus", "Amusement Park", "Crashing Airplane", "Titanic",
     "Burning Orphanage", "Dingy Motel Drug Deal", "Prison", "Safari",
     "Zombie Apocalypse", "Organ-Harvesting Hospital", "Nuclear Submarine",
     "Daycare", "Amazon Rainforest", "Concert Hall", "Space Station",
     "High School", "Haunted Mansion", "Beach"
-];
+]));
 
 // NEW: Player lists for new game types
-const nbaPlayers = ["Lebron James", "Kawhi Leonard", "Steph Curry", "Klay Thompson", "Damian Lillard", "Giannis Antetokounmpo", 
+const nbaPlayers = Array.from(new Set([
+    "Lebron James", "Kawhi Leonard", "Steph Curry", "Klay Thompson", "Damian Lillard", "Giannis Antetokounmpo", 
     "Chris Paul", "Zion Williamson", "Ja Morant", "Scottie Barnes", "Chet Holmgren", "Paolo Banchero", 
     "Franz Wagner", "Gradey Dick", "Kyle Lowry", "DeMar DeRozan", "CJ McCollum", "Anthony Davis", 
     "Fred VanVleet", "Miles Bridges", "James Harden", "Russell Westbrook", "Joel Embiid", "Tyrese Maxey", 
@@ -30,10 +31,10 @@ const nbaPlayers = ["Lebron James", "Kawhi Leonard", "Steph Curry", "Klay Thomps
     "Ben Simmons", "Nic Claxton", "Spencer Dinwiddie", "Jayson Tatum", "Jaylen Brown", "Derrick White", 
     "Jrue Holiday", "Kristaps Porzingis", "Al Horford", "Gary Trent Jr.", "Brook Lopez", "Khris Middleton", 
     "Bobby Portis", "Tyrese Haliburton", "Pascal Siakam", "Myles Turner", "Bennedict Mathurin", "Obi Toppin", 
-    "Darius Garland", "Donovan Mitchell", "Evan Mobley", "Jarrett Allen", "DeMar DeRozan", "Zach LaVine", 
+    "Darius Garland", "Donovan Mitchell", "Evan Mobley", "Jarrett Allen", "Zach LaVine", 
     "Nikola Vucevic", "Josh Giddey", "Cade Cunningham", "Jaden Ivey", "Ausar Thompson", "Jalen Duren", 
     "Tobias Harris", "Jimmy Butler", "Bam Adebayo", "Terry Rozier", "Tyler Herro", "Duncan Robinson", 
-    "Trae Young", "Clint Capela", "Zaccharie Risacher", "LaMelo Ball", "Miles Bridges", "Brandon Miller", 
+    "Trae Young", "Clint Capela", "Zaccharie Risacher", "LaMelo Ball", "Brandon Miller", 
     "Grant Williams", "Seth Curry", "Kyle Kuzma", "Jordan Poole", "Alex Sarr", "Shai Gilgeous-Alexander", 
     "Jalen Williams", "Lu Dort", "Alex Caruso", "Nikola Jokic", "Jamal Murray", "Michael Porter Jr.", 
     "Aaron Gordon", "Bruce Brown", "Anthony Edwards", "Mike Conley", "Rudy Gobert", "Karl-Anthony Towns", 
@@ -45,13 +46,16 @@ const nbaPlayers = ["Lebron James", "Kawhi Leonard", "Steph Curry", "Klay Thomps
     "Lauri Markkanen", "Walker Kessler", "Jordan Clarkson", "Jaren Jackson Jr.", "Desmond Bane", 
     "Marcus Smart", "Zach Edey", "Victor Wembanyama", "Keldon Johnson", "Devin Vassell", "Jeremy Sochan", 
     "Anfernee Simons", "Scoot Henderson", "Deandre Ayton", "Jerami Grant", "Shaedon Sharpe", 
-    "Deni Avdija", "Cooper Flagg"];
+    "Deni Avdija", "Cooper Flagg"
+]));
 
-const rappers = ["Drake", "Future", "21 Savage", "Travis Scott", "Kanye", "XXXTentacion", "Nav", "Roddy Ricch", "A Boogie wit da Hoodie", 
+const rappers = Array.from(new Set([
+    "Drake", "Future", "21 Savage", "Travis Scott", "Kanye", "XXXTentacion", "Nav", "Roddy Ricch", "A Boogie wit da Hoodie", 
     "Post Malone", "Lil Baby", "Lil Wayne", "Baby Keem", "Kendrick Lamar", "Lil Tecca", "Don Toliver", "Chris Brown", 
     "Coi Leray", "Nicki Minaj", "Cardi B", "DaBaby", "J. Cole", "Eminem", "Gunna", "Quavo", "Jay-Z", "Juice WRLD", "Big Black Banana Man", 
     "The Weeknd", "Kid Cudi", "Kodak Black", "Lil Durk", "Lil Skies", "Lil Tjay", "Lil Uzi Vert", "Meek Mill", "Nas", "PARTYNEXTDOOR",
-    "Offset", "PARTYNEXTDOOR", "Playboi Carti", "Polo G", "Pop Smoke", "Swae Lee", "Tory Lanez", "Young Thug", "Ty Dolla $ign", "Nicki Minaj"];
+    "Offset", "Playboi Carti", "Polo G", "Pop Smoke", "Swae Lee", "Tory Lanez", "Young Thug", "Ty Dolla $ign"
+]));
 
 // The Mole question system (unchanged)
 const questions = [
@@ -808,6 +812,16 @@ class GameRoom {
         this.gameState.readyToVoteCount++;
         
         console.log(`${this.players.get(playerId).name} is ready to vote. Count: ${this.gameState.readyToVoteCount}/${this.players.size - 1}`);
+
+        // Emit ready count update
+        const room = this;
+        const ioRef = typeof io !== 'undefined' ? io : require('socket.io')(server);
+        if (room && room.roomCode) {
+            ioRef.to(room.roomCode).emit('ready_count_updated', {
+                readyCount: this.gameState.readyToVoteCount,
+                requiredCount: this.players.size - 1
+            });
+        }
 
         if (this.gameState.readyToVoteCount >= this.players.size - 1) {
             console.log('Enough players ready, starting voting phase');
