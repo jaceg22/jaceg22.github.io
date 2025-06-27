@@ -1412,11 +1412,6 @@
             socket.emit('toggle_ready');
         }
 
-        function toggleLock() {
-            if (!isHost) return;
-            socket.emit('toggle_lock');
-        }
-
         function kickPlayer(targetId) {
             if (!isHost) return;
             
@@ -1944,6 +1939,14 @@
             } else {
                 showInfo(`${data.kickedPlayerName} was kicked from the room`);
             }
+            
+            // Check if current player became host
+            const currentPlayer = data.players.find(p => p.name === actualPlayerName);
+            if (currentPlayer && currentPlayer.isHost && !isHost) {
+                isHost = true;
+                showInfo('You are now the host!');
+            }
+            
             updateLobbyPlayers(data.players);
             if (data.scoreboard) {
                 updateLobbyScoreboard(data.scoreboard);
@@ -1955,6 +1958,13 @@
         });
 
         socket.on('room_updated', (data) => {
+            // Check if current player became host
+            const currentPlayer = data.players.find(p => p.name === actualPlayerName);
+            if (currentPlayer && currentPlayer.isHost && !isHost) {
+                isHost = true;
+                showInfo('You are now the host!');
+            }
+            
             updateLobbyPlayers(data.players);
             if (data.scoreboard) {
                 updateLobbyScoreboard(data.scoreboard);
@@ -1976,6 +1986,14 @@
 
         socket.on('player_left', (data) => {
             showInfo(`${data.playerName} left the room`);
+            
+            // Check if current player became host
+            const currentPlayer = data.players.find(p => p.name === actualPlayerName);
+            if (currentPlayer && currentPlayer.isHost && !isHost) {
+                isHost = true;
+                showInfo('You are now the host!');
+            }
+            
             updateLobbyPlayers(data.players);
             if (data.scoreboard) {
                 updateLobbyScoreboard(data.scoreboard);
@@ -2149,7 +2167,6 @@
 
             const readyBtn = document.getElementById('ready-btn');
             const startBtn = document.getElementById('start-btn');
-            const lockBtn = document.getElementById('lock-btn');
             const customLocationsBtn = document.getElementById('custom-locations-btn');
             
             if (isHost) {
@@ -2158,7 +2175,6 @@
                 const hasEnoughPlayers = players.length >= 3;
                 
                 startBtn.style.display = (allHumansReady && hasEnoughPlayers) ? 'inline-block' : 'none';
-                lockBtn.style.display = 'inline-block';
                 customLocationsBtn.style.display = currentGameType === 'mole' ? 'inline-block' : 'none';
                 readyBtn.style.display = 'none'; // Always hide ready button for host
             } else {
@@ -2166,7 +2182,6 @@
                 readyBtn.textContent = currentPlayer?.isReady ? 'Cancel Ready' : 'Ready Up';
                 readyBtn.className = `btn ${currentPlayer?.isReady ? 'btn-warning' : 'btn-primary'}`;
                 startBtn.style.display = 'none';
-                lockBtn.style.display = 'none';
                 customLocationsBtn.style.display = 'none';
             }
             

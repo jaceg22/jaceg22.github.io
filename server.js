@@ -625,7 +625,9 @@ class GameRoom {
             }
             
             if (newHost) {
-                this.players.get(newHost).isHost = true;
+                const newHostPlayer = this.players.get(newHost);
+                newHostPlayer.isHost = true;
+                newHostPlayer.isReady = false; // Remove ready status when becoming host
                 this.hostId = newHost;
             }
         }
