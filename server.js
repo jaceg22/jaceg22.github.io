@@ -14,10 +14,16 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Enhanced lobby endpoint to get public lobbies
 app.get('/api/public-lobbies', (req, res) => {
+    const gameType = req.query.gameType; // Get game type from query parameter
     const publicLobbies = [];
     
     for (const [roomCode, room] of gameRooms.entries()) {
         if (room.roomType === 'public' && room.gameState.status === 'waiting') {
+            // Filter by game type if specified
+            if (gameType && room.gameType !== gameType) {
+                continue;
+            }
+            
             publicLobbies.push({
                 roomCode: room.roomCode,
                 gameType: room.gameType,
@@ -388,6 +394,7 @@ class GameRoom {
         this.createdAt = new Date(); // NEW: Track creation time for sorting
         this.players = new Map();
         this.bots = new Map();
+        this.disconnectedPlayers = new Map(); // NEW: Track disconnected players
         this.gameState = {
             status: 'waiting',
             location: null,
@@ -633,6 +640,93 @@ class GameRoom {
         }
         
         return player;
+    }
+
+    // NEW: Handle player disconnection during game
+    handlePlayerDisconnect(socketId) {
+        const player = this.players.get(socketId);
+        if (!player) return null;
+        
+        // If game is not in progress, just remove the player
+        if (this.gameState.status !== 'playing') {
+            return this.removePlayer(socketId);
+        }
+        
+        // Check if disconnecting player is the imposter
+        if (socketId === this.gameState.imposter) {
+            this.endGame('imposter_left', 'Imposter left the game! No one wins.');
+            return player;
+        }
+        
+        // Store disconnected player info for potential reconnection
+        this.disconnectedPlayers.set(player.name, {
+            socketId: socketId,
+            player: player,
+            disconnectTime: Date.now(),
+            wasCurrentTurn: this.getCurrentPlayer() === socketId,
+            turnWhenDisconnected: this.gameState.currentTurn
+        });
+        
+        // Remove from active players but keep in scoreboard
+        this.players.delete(socketId);
+        
+        // Update player order to remove disconnected player
+        this.playerOrder = this.playerOrder.filter(id => id !== socketId);
+        
+        // Adjust current turn if needed
+        if (this.playerOrder.length > 0) {
+            this.gameState.currentTurn = this.gameState.currentTurn % this.playerOrder.length;
+        }
+        
+        console.log(`Player ${player.name} disconnected from room ${this.roomCode}. Can reconnect within 60 seconds.`);
+        
+        return player;
+    }
+
+    // NEW: Handle player reconnection
+    handlePlayerReconnect(socketId, playerName) {
+        const disconnectedInfo = this.disconnectedPlayers.get(playerName);
+        if (!disconnectedInfo) return null;
+        
+        const timeSinceDisconnect = Date.now() - disconnectedInfo.disconnectTime;
+        if (timeSinceDisconnect > 60000) { // 60 seconds
+            console.log(`Player ${playerName} reconnection attempt too late (${timeSinceDisconnect}ms)`);
+            this.disconnectedPlayers.delete(playerName);
+            return null;
+        }
+        
+        // Restore player
+        const player = disconnectedInfo.player;
+        this.players.set(socketId, player);
+        this.disconnectedPlayers.delete(playerName);
+        
+        // Update player order to include reconnected player
+        if (!this.playerOrder.includes(socketId)) {
+            this.playerOrder.push(socketId);
+        }
+        
+        console.log(`Player ${playerName} reconnected to room ${this.roomCode}`);
+        
+        return player;
+    }
+
+    // NEW: Check for expired disconnections
+    cleanupExpiredDisconnections() {
+        const now = Date.now();
+        const expiredPlayers = [];
+        
+        for (const [playerName, info] of this.disconnectedPlayers.entries()) {
+            if (now - info.disconnectTime > 60000) {
+                expiredPlayers.push(playerName);
+            }
+        }
+        
+        expiredPlayers.forEach(playerName => {
+            this.disconnectedPlayers.delete(playerName);
+            console.log(`Player ${playerName} reconnection window expired`);
+        });
+        
+        return expiredPlayers;
     }
 
     setCustomLocations(locations) {
@@ -1220,11 +1314,16 @@ io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
     // NEW: Get public lobbies
-    socket.on('get_public_lobbies', () => {
+    socket.on('get_public_lobbies', ({ gameType }) => {
         const publicLobbies = [];
         
         for (const [roomCode, room] of gameRooms.entries()) {
             if (room.roomType === 'public' && room.gameState.status === 'waiting') {
+                // Filter by game type if specified
+                if (gameType && room.gameType !== gameType) {
+                    continue;
+                }
+                
                 publicLobbies.push({
                     roomCode: room.roomCode,
                     gameType: room.gameType,
@@ -1772,9 +1871,148 @@ io.on('connection', (socket) => {
         console.log('User disconnected:', socket.id);
         const room = findPlayerRoom(socket.id);
         if (room) {
+            const player = room.handlePlayerDisconnect(socket.id);
+            
+            if (room.players.size === 0 && room.disconnectedPlayers.size === 0) {
+                gameRooms.delete(room.roomCode);
+                console.log(`Room ${room.roomCode} deleted (no players left)`);
+                // Emit updated public lobbies to all clients
+                const publicLobbies = [];
+                for (const [roomCode, room] of gameRooms.entries()) {
+                    if (room.roomType === 'public' && room.gameState.status === 'waiting') {
+                        publicLobbies.push({
+                            roomCode: room.roomCode,
+                            gameType: room.gameType,
+                            playerCount: room.players.size,
+                            maxPlayers: 8,
+                            hostName: Array.from(room.players.values()).find(p => p.isHost)?.name || 'Unknown',
+                            usingCustomLocations: room.customLocations.length > 0,
+                            botCount: room.bots.size,
+                            createdAt: room.createdAt
+                        });
+                    }
+                }
+                publicLobbies.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                io.emit('public_lobbies', publicLobbies.slice(0, 10));
+            } else {
+                // Clean up expired disconnections
+                const expiredPlayers = room.cleanupExpiredDisconnections();
+                
+                io.to(room.roomCode).emit('player_left', {
+                    playerName: player?.name,
+                    players: Array.from(room.players.entries()).map(([id, player]) => ({
+                        id, 
+                        name: player.name, 
+                        isHost: player.isHost,
+                        isReady: player.isReady,
+                        isBot: player.isBot
+                    })),
+                    scoreboard: room.getScoreboardData(),
+                    roomType: room.roomType,
+                    botCount: room.bots.size,
+                    usingCustomLocations: room.customLocations.length > 0,
+                    gameType: room.gameType,
+                    disconnectedPlayers: Array.from(room.disconnectedPlayers.keys())
+                });
+                
+                // If game is in progress, continue the game
+                if (room.gameState.status === 'playing') {
+                    room.players.forEach((player, socketId) => {
+                        if (!player.isBot) {
+                            io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+                        }
+                    });
+                    
+                    // Continue game flow
+                    setTimeout(() => {
+                        if (room.gameType === 'mole') {
+                            handleBotTurn(room);
+                        } else {
+                            handleHintTurn(room);
+                        }
+                    }, 1000);
+                }
+            }
+        }
+    });
+
+    // NEW: Handle player reconnection
+    socket.on('reconnect_to_game', ({ roomCode, playerName }) => {
+        const room = gameRooms.get(roomCode);
+        if (!room) {
+            socket.emit('error', 'Room not found');
+            return;
+        }
+        
+        const reconnectedPlayer = room.handlePlayerReconnect(socket.id, playerName);
+        if (!reconnectedPlayer) {
+            socket.emit('error', 'Reconnection failed. Time window expired or player not found.');
+            return;
+        }
+        
+        socket.join(roomCode);
+        
+        // Update host status if needed
+        if (reconnectedPlayer.isHost) {
+            room.hostId = socket.id;
+        }
+        
+        socket.emit('reconnected', {
+            roomCode: room.roomCode,
+            isHost: reconnectedPlayer.isHost,
+            actualName: reconnectedPlayer.name,
+            gameType: room.gameType,
+            roomType: room.roomType
+        });
+        
+        // Send current game state
+        if (room.gameState.status === 'playing') {
+            socket.emit('game_started', room.getGameStateForPlayer(socket.id));
+        } else {
+            socket.emit('room_updated', { 
+                players: Array.from(room.players.entries()).map(([id, player]) => ({
+                    id, 
+                    name: player.name, 
+                    isHost: player.isHost,
+                    isReady: player.isReady,
+                    isBot: player.isBot
+                })),
+                scoreboard: room.getScoreboardData(),
+                roomType: room.roomType,
+                botCount: room.bots.size,
+                usingCustomLocations: room.customLocations.length > 0,
+                gameType: room.gameType
+            });
+        }
+        
+        // Notify other players
+        io.to(room.roomCode).emit('player_reconnected', {
+            playerName: reconnectedPlayer.name,
+            players: Array.from(room.players.entries()).map(([id, player]) => ({
+                id, 
+                name: player.name, 
+                isHost: player.isHost,
+                isReady: player.isReady,
+                isBot: player.isBot
+            })),
+            scoreboard: room.getScoreboardData(),
+            roomType: room.roomType,
+            botCount: room.bots.size,
+            usingCustomLocations: room.customLocations.length > 0,
+            gameType: room.gameType
+        });
+        
+        console.log(`${reconnectedPlayer.name} reconnected to room ${room.roomCode}`);
+    });
+
+    // NEW: Handle player leaving intentionally
+    socket.on('leave_room', () => {
+        const room = findPlayerRoom(socket.id);
+        if (room) {
+            // Remove player without adding to disconnectedPlayers
             const player = room.removePlayer(socket.id);
             
-            if (room.players.size === 0) {
+            if (room.players.size === 0 && room.disconnectedPlayers.size === 0) {
                 gameRooms.delete(room.roomCode);
                 console.log(`Room ${room.roomCode} deleted (no players left)`);
                 // Emit updated public lobbies to all clients
@@ -1809,8 +2047,27 @@ io.on('connection', (socket) => {
                     roomType: room.roomType,
                     botCount: room.bots.size,
                     usingCustomLocations: room.customLocations.length > 0,
-                    gameType: room.gameType
+                    gameType: room.gameType,
+                    disconnectedPlayers: Array.from(room.disconnectedPlayers.keys())
                 });
+                
+                // If game is in progress, continue the game
+                if (room.gameState.status === 'playing') {
+                    room.players.forEach((player, socketId) => {
+                        if (!player.isBot) {
+                            io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
+                        }
+                    });
+                    
+                    // Continue game flow
+                    setTimeout(() => {
+                        if (room.gameType === 'mole') {
+                            handleBotTurn(room);
+                        } else {
+                            handleHintTurn(room);
+                        }
+                    }, 1000);
+                }
             }
         }
     });
@@ -1824,6 +2081,16 @@ io.on('connection', (socket) => {
         return null;
     }
 });
+
+// NEW: Periodic cleanup of expired disconnections
+setInterval(() => {
+    for (const room of gameRooms.values()) {
+        const expiredPlayers = room.cleanupExpiredDisconnections();
+        if (expiredPlayers.length > 0) {
+            console.log(`Cleaned up ${expiredPlayers.length} expired disconnections in room ${room.roomCode}`);
+        }
+    }
+}, 30000); // Check every 30 seconds
 
 // NEW: Handle hint turns for NBA/Rapper games
 function handleHintTurn(room) {

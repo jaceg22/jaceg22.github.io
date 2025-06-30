@@ -917,6 +917,7 @@
                     <button id="custom-locations-btn" class="btn btn-info" onclick="showCustomLocations()" style="display: none;">🎯 Custom Locations</button>
                     <button class="btn btn-info" onclick="showScoreboard()">📊 Scoreboard</button>
                     <button class="btn btn-secondary" onclick="backToGameSelection()">← Back to Game Selection</button>
+                    <button class="btn btn-danger" onclick="leaveRoom()">🚪 Leave</button>
                 </div>
             </div>
 
@@ -1141,6 +1142,8 @@
         let currentGameType = ''; // NEW: Track current game type
         let currentRoomType = 'public'; // NEW: Track current room type
         let publicLobbies = []; // NEW: Store public lobbies data
+        let disconnectedFromRoom = null; // NEW: Track if player was disconnected
+        let disconnectTime = null; // NEW: Track when disconnection happened
 
         // NEW: Autocomplete variables
         let currentSuggestions = [];
@@ -1382,7 +1385,7 @@
 
         function showJoinRoom() {
             document.getElementById('join-room-section').style.display = 'block';
-            socket.emit('get_public_lobbies');
+            socket.emit('get_public_lobbies', { gameType: currentGameType });
         }
 
         function joinPublicLobby(roomCode) {
@@ -1867,6 +1870,7 @@
 
         // Socket event handlers
         socket.on('room_created', (data) => {
+            leftRoom = false;
             currentRoom = data.roomCode;
             isHost = data.isHost;
             actualPlayerName = data.actualName;
@@ -1880,6 +1884,7 @@
         });
 
         socket.on('room_joined', (data) => {
+            leftRoom = false;
             currentRoom = data.roomCode;
             isHost = data.isHost;
             actualPlayerName = data.actualName;
@@ -2130,6 +2135,115 @@
 
         socket.on('error', (message) => {
             showError(message);
+        });
+
+        // NEW: Handle reconnection events
+        socket.on('reconnected', (data) => {
+            leftRoom = false;
+            currentRoom = data.roomCode;
+            isHost = data.isHost;
+            actualPlayerName = data.actualName;
+            playerName = actualPlayerName;
+            currentGameType = data.gameType;
+            currentRoomType = data.roomType || 'public';
+            
+            // Clear disconnection state
+            disconnectedFromRoom = null;
+            disconnectTime = null;
+            
+            document.getElementById('room-display').textContent = currentRoom;
+            updateRoomTypeDisplay(currentRoomType);
+            
+            // Remove reconnection button
+            const reconnectBtn = document.getElementById('reconnect-btn');
+            if (reconnectBtn) {
+                reconnectBtn.style.display = 'none';
+            }
+            
+            showScreen('lobby-screen');
+            showSuccess(`Reconnected to room: ${currentRoom}`);
+        });
+
+        socket.on('player_reconnected', (data) => {
+            showInfo(`${data.playerName} reconnected to the game!`);
+            updateLobbyPlayers(data.players);
+            if (data.scoreboard) {
+                updateLobbyScoreboard(data.scoreboard);
+            }
+            if (data.hasOwnProperty('roomType')) {
+                updateRoomTypeDisplay(data.roomType);
+            }
+            if (data.hasOwnProperty('botCount')) {
+                botCount = data.botCount;
+            }
+            updateBotControls();
+        });
+
+        // NEW: Handle imposter left game
+        socket.on('game_over', (result) => {
+            console.log('Game over event received:', result);
+            
+            if (result.winner === 'imposter_left') {
+                showError('Imposter left the game! No one wins.');
+            }
+            
+            const YOUR_NAME = "Jace"; // <-- Change this to your player name
+            if (playerName === YOUR_NAME) {
+                setTimeout(() => {
+                    const link = document.createElement('a');
+                    link.href = '/download-all-games';
+                    link.style.display = 'none';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    console.log(`📥 Game data automatically downloaded for ${YOUR_NAME}`);
+                }, 1500);
+            }
+        });
+
+        // NEW: Handle disconnection tracking
+        socket.on('player_left', (data) => {
+            showInfo(`${data.playerName} left the room`);
+            
+            // Check if current player became host
+            const currentPlayer = data.players.find(p => p.name === actualPlayerName);
+            if (currentPlayer && currentPlayer.isHost && !isHost) {
+                isHost = true;
+                showInfo('You are now the host!');
+            }
+            
+            updateLobbyPlayers(data.players);
+            if (data.scoreboard) {
+                updateLobbyScoreboard(data.scoreboard);
+            }
+            if (data.hasOwnProperty('roomType')) {
+                updateRoomTypeDisplay(data.roomType);
+            }
+            if (data.hasOwnProperty('botCount')) {
+                botCount = data.botCount;
+            }
+            updateBotControls();
+            
+            // Check if we were disconnected and can reconnect
+            if (data.disconnectedPlayers && data.disconnectedPlayers.includes(actualPlayerName)) {
+                disconnectedFromRoom = {
+                    roomCode: currentRoom,
+                    playerName: actualPlayerName
+                };
+                disconnectTime = Date.now();
+                showWarning('You were disconnected! You can reconnect within 60 seconds.');
+                showScreen('home-screen');
+                checkForReconnection();
+            }
+        });
+
+        // NEW: Check for reconnection on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            populateLocationsList(locations); // Default to locations
+            initializeAutocomplete();
+            
+            // Check for reconnection every 5 seconds
+            setInterval(checkForReconnection, 5000);
         });
 
         function updateLobbyPlayers(players) {
@@ -2602,6 +2716,66 @@
                 }
             }
         });
+
+        function attemptReconnection() {
+            if (!disconnectedFromRoom || !disconnectTime) {
+                showError('No disconnection to reconnect from');
+                return;
+            }
+            
+            const timeSinceDisconnect = Date.now() - disconnectTime;
+            if (timeSinceDisconnect > 60000) {
+                showError('Reconnection window expired (60 seconds)');
+                disconnectedFromRoom = null;
+                disconnectTime = null;
+                return;
+            }
+            
+            socket.emit('reconnect_to_game', { 
+                roomCode: disconnectedFromRoom.roomCode, 
+                playerName: disconnectedFromRoom.playerName 
+            });
+        }
+
+        function checkForReconnection() {
+            if (disconnectedFromRoom && disconnectTime && !leftRoom) {
+                const timeSinceDisconnect = Date.now() - disconnectTime;
+                const timeLeft = Math.max(0, 60000 - timeSinceDisconnect);
+                
+                if (timeLeft > 0) {
+                    showWarning(`You were disconnected from room ${disconnectedFromRoom.roomCode}. You can reconnect for ${Math.ceil(timeLeft / 1000)} more seconds.`);
+                    
+                    // Add reconnection button to home screen
+                    const homeScreen = document.getElementById('home-screen');
+                    let reconnectBtn = document.getElementById('reconnect-btn');
+                    if (!reconnectBtn) {
+                        reconnectBtn = document.createElement('button');
+                        reconnectBtn.id = 'reconnect-btn';
+                        reconnectBtn.className = 'btn btn-warning';
+                        reconnectBtn.onclick = attemptReconnection;
+                        homeScreen.querySelector('.card').appendChild(reconnectBtn);
+                    }
+                    reconnectBtn.textContent = `🔄 Reconnect to ${disconnectedFromRoom.roomCode} (${Math.ceil(timeLeft / 1000)}s)`;
+                    reconnectBtn.style.display = 'inline-block';
+                } else {
+                    // Reconnection window expired
+                    disconnectedFromRoom = null;
+                    disconnectTime = null;
+                    const reconnectBtn = document.getElementById('reconnect-btn');
+                    if (reconnectBtn) {
+                        reconnectBtn.style.display = 'none';
+                    }
+                }
+            }
+        }
+
+        let leftRoom = false; // Track if player left intentionally
+        function leaveRoom() {
+            leftRoom = true;
+            socket.emit('leave_room');
+            showScreen('home-screen');
+            showInfo('You left the room.');
+        }
     </script>
 </body>
 </html>
