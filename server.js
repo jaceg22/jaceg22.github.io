@@ -1390,8 +1390,11 @@ io.on('connection', (socket) => {
             return;
         }
         
-        // NEW: Check room type and joinability
-        if (!room.isJoinable()) {
+        // Check if player is trying to reconnect (was previously disconnected)
+        const wasDisconnected = room.disconnectedPlayers.has(playerName);
+        
+        // NEW: Check room type and joinability (allow reconnection even if game in progress)
+        if (!wasDisconnected && !room.isJoinable()) {
             if (room.roomType === 'locked') {
                 socket.emit('error', 'Room is locked');
             } else if (room.players.size >= 8) {
@@ -1404,6 +1407,71 @@ io.on('connection', (socket) => {
             return;
         }
 
+        // If player was disconnected, handle reconnection
+        if (wasDisconnected) {
+            const reconnectedPlayer = room.handlePlayerReconnect(socket.id, playerName);
+            if (!reconnectedPlayer) {
+                socket.emit('error', 'Reconnection failed. Time window expired or player not found.');
+                return;
+            }
+            
+            socket.join(roomCode);
+            
+            // Update host status if needed
+            if (reconnectedPlayer.isHost) {
+                room.hostId = socket.id;
+            }
+            
+            socket.emit('reconnected', {
+                roomCode: room.roomCode,
+                isHost: reconnectedPlayer.isHost,
+                actualName: reconnectedPlayer.name,
+                gameType: room.gameType,
+                roomType: room.roomType
+            });
+            
+            // Send current game state
+            if (room.gameState.status === 'playing') {
+                socket.emit('game_started', room.getGameStateForPlayer(socket.id));
+            } else {
+                socket.emit('room_updated', { 
+                    players: Array.from(room.players.entries()).map(([id, player]) => ({
+                        id, 
+                        name: player.name, 
+                        isHost: player.isHost,
+                        isReady: player.isReady,
+                        isBot: player.isBot
+                    })),
+                    scoreboard: room.getScoreboardData(),
+                    roomType: room.roomType,
+                    botCount: room.bots.size,
+                    usingCustomLocations: room.customLocations.length > 0,
+                    gameType: room.gameType
+                });
+            }
+            
+            // Notify other players
+            io.to(room.roomCode).emit('player_reconnected', {
+                playerName: reconnectedPlayer.name,
+                players: Array.from(room.players.entries()).map(([id, player]) => ({
+                    id, 
+                    name: player.name, 
+                    isHost: player.isHost,
+                    isReady: player.isReady,
+                    isBot: player.isBot
+                })),
+                scoreboard: room.getScoreboardData(),
+                roomType: room.roomType,
+                botCount: room.bots.size,
+                usingCustomLocations: room.customLocations.length > 0,
+                gameType: room.gameType
+            });
+            
+            console.log(`${reconnectedPlayer.name} reconnected to room ${room.roomCode}`);
+            return;
+        }
+
+        // Normal join flow for new players
         const actualName = room.addPlayer(socket.id, playerName);
         socket.join(roomCode);
         socket.emit('room_joined', { 

@@ -1012,6 +1012,11 @@
                 <div id="game-scoreboard-content"></div>
                 <button class="btn btn-info" onclick="showScoreboard()">View Full Scoreboard</button>
             </div>
+
+            <!-- NEW: Leave button for game screen -->
+            <div style="text-align: center; margin-top: 2rem;">
+                <button class="btn btn-danger" onclick="leaveGame()">🚪 Leave Game</button>
+            </div>
         </div>
 
         <!-- Game Over Screen -->
@@ -1120,6 +1125,18 @@
             <h3>📊 Round Summary</h3>
             <div id="round-summary-content"></div>
             <button class="btn btn-primary" onclick="hideRoundSummary()">Continue</button>
+        </div>
+    </div>
+
+    <!-- NEW: Leave game confirmation modal -->
+    <div id="leave-game-modal" class="modal">
+        <div class="modal-content">
+            <h3>🚪 Leave Game</h3>
+            <p>Are you sure you want to leave the game? You won't be able to rejoin.</p>
+            <div style="text-align: center; margin-top: 1rem;">
+                <button class="btn btn-danger" onclick="confirmLeaveGame()">Leave</button>
+                <button class="btn btn-secondary" onclick="hideModal('leave-game-modal')">Return</button>
+            </div>
         </div>
     </div>
 
@@ -2010,12 +2027,38 @@
                 botCount = data.botCount;
             }
             updateBotControls();
+            
+            // Check if we were disconnected and can reconnect
+            if (data.disconnectedPlayers && data.disconnectedPlayers.includes(actualPlayerName)) {
+                disconnectedFromRoom = {
+                    roomCode: currentRoom,
+                    playerName: actualPlayerName
+                };
+                disconnectTime = Date.now();
+                showWarning('You were disconnected! You can reconnect within 60 seconds.');
+                
+                // Set the room code in the join input for easy reconnection
+                document.getElementById('room-code').value = currentRoom;
+                
+                showScreen('home-screen');
+                document.getElementById('join-room-section').style.display = 'block';
+                checkForReconnection();
+            }
         });
 
         socket.on('game_started', (data) => {
             gameState = data;
             hasClickedReadyToVote = false;
             currentGameType = data.gameType;
+            
+            // Clear any persistent UI elements
+            document.getElementById('ask-section').style.display = 'none';
+            document.getElementById('give-hint-section').style.display = 'none';
+            document.getElementById('ready-to-vote-section').style.display = 'none';
+            document.getElementById('voting-section').style.display = 'none';
+            document.getElementById('imposter-reveal-section').style.display = 'none';
+            document.getElementById('imposter-guess-section').style.display = 'none';
+            document.getElementById('question-status').style.display = 'none';
             
             if (data.scoreboard) {
                 scoreboardData = data.scoreboard;
@@ -2113,6 +2156,19 @@
         socket.on('game_over', (result) => {
             console.log('Game over event received:', result);
             
+            // Clear any persistent UI elements
+            document.getElementById('ask-section').style.display = 'none';
+            document.getElementById('give-hint-section').style.display = 'none';
+            document.getElementById('ready-to-vote-section').style.display = 'none';
+            document.getElementById('voting-section').style.display = 'none';
+            document.getElementById('imposter-reveal-section').style.display = 'none';
+            document.getElementById('imposter-guess-section').style.display = 'none';
+            document.getElementById('question-status').style.display = 'none';
+            
+            if (result.winner === 'imposter_left') {
+                showError('Imposter left the game! No one wins.');
+            }
+            
             const YOUR_NAME = "Jace"; // <-- Change this to your player name
             if (playerName === YOUR_NAME) {
                 setTimeout(() => {
@@ -2160,6 +2216,9 @@
                 reconnectBtn.style.display = 'none';
             }
             
+            // Hide join room section
+            document.getElementById('join-room-section').style.display = 'none';
+            
             showScreen('lobby-screen');
             showSuccess(`Reconnected to room: ${currentRoom}`);
         });
@@ -2177,28 +2236,6 @@
                 botCount = data.botCount;
             }
             updateBotControls();
-        });
-
-        // NEW: Handle imposter left game
-        socket.on('game_over', (result) => {
-            console.log('Game over event received:', result);
-            
-            if (result.winner === 'imposter_left') {
-                showError('Imposter left the game! No one wins.');
-            }
-            
-            const YOUR_NAME = "Jace"; // <-- Change this to your player name
-            if (playerName === YOUR_NAME) {
-                setTimeout(() => {
-                    const link = document.createElement('a');
-                    link.href = '/download-all-games';
-                    link.style.display = 'none';
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    console.log(`📥 Game data automatically downloaded for ${YOUR_NAME}`);
-                }, 1500);
-            }
         });
 
         // NEW: Handle disconnection tracking
@@ -2232,7 +2269,12 @@
                 };
                 disconnectTime = Date.now();
                 showWarning('You were disconnected! You can reconnect within 60 seconds.');
+                
+                // Set the room code in the join input for easy reconnection
+                document.getElementById('room-code').value = currentRoom;
+                
                 showScreen('home-screen');
+                document.getElementById('join-room-section').style.display = 'block';
                 checkForReconnection();
             }
         });
@@ -2731,9 +2773,11 @@
                 return;
             }
             
-            socket.emit('reconnect_to_game', { 
+            // Use join_room instead of separate reconnect event
+            socket.emit('join_room', { 
                 roomCode: disconnectedFromRoom.roomCode, 
-                playerName: disconnectedFromRoom.playerName 
+                playerName: disconnectedFromRoom.playerName,
+                gameType: currentGameType
             });
         }
 
@@ -2757,6 +2801,10 @@
                     }
                     reconnectBtn.textContent = `🔄 Reconnect to ${disconnectedFromRoom.roomCode} (${Math.ceil(timeLeft / 1000)}s)`;
                     reconnectBtn.style.display = 'inline-block';
+                    
+                    // Show join room section with room code pre-filled
+                    document.getElementById('join-room-section').style.display = 'block';
+                    document.getElementById('room-code').value = disconnectedFromRoom.roomCode;
                 } else {
                     // Reconnection window expired
                     disconnectedFromRoom = null;
@@ -2765,6 +2813,7 @@
                     if (reconnectBtn) {
                         reconnectBtn.style.display = 'none';
                     }
+                    showError('Reconnection window expired. You can join a new room.');
                 }
             }
         }
@@ -2775,6 +2824,17 @@
             socket.emit('leave_room');
             showScreen('home-screen');
             showInfo('You left the room.');
+        }
+
+        // NEW: Leave button for game screen
+        function leaveGame() {
+            showModal('leave-game-modal');
+        }
+
+        // NEW: Leave game confirmation modal
+        function confirmLeaveGame() {
+            hideModal('leave-game-modal');
+            leaveRoom();
         }
     </script>
 </body>
