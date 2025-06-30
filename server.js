@@ -670,12 +670,18 @@ class GameRoom {
         // Remove from active players but keep in scoreboard
         this.players.delete(socketId);
         
+        // Store the index of the disconnected player before removing them
+        const disconnectedIndex = this.playerOrder.indexOf(socketId);
+        
         // Update player order to remove disconnected player
         this.playerOrder = this.playerOrder.filter(id => id !== socketId);
         
         // Adjust current turn if needed
         if (this.playerOrder.length > 0) {
-            this.gameState.currentTurn = this.gameState.currentTurn % this.playerOrder.length;
+            // If the disconnected player was before or at the current turn, we need to adjust
+            if (disconnectedIndex <= this.gameState.currentTurn) {
+                this.gameState.currentTurn = this.gameState.currentTurn % this.playerOrder.length;
+            }
         }
         
         console.log(`Player ${player.name} disconnected from room ${this.roomCode}. Can reconnect within 60 seconds.`);
@@ -700,12 +706,36 @@ class GameRoom {
         this.players.set(socketId, player);
         this.disconnectedPlayers.delete(playerName);
         
-        // Update player order to include reconnected player
-        if (!this.playerOrder.includes(socketId)) {
+        // Find the position where this player should be in the turn order
+        // We need to find where the old socket ID was and replace it with the new one
+        const oldSocketId = disconnectedInfo.socketId;
+        const oldPosition = this.playerOrder.indexOf(oldSocketId);
+        
+        if (oldPosition !== -1) {
+            // Replace the old socket ID with the new one in the same position
+            this.playerOrder[oldPosition] = socketId;
+        } else {
+            // If the old socket ID is not in playerOrder, add the new one at the end
             this.playerOrder.push(socketId);
         }
         
-        console.log(`Player ${playerName} reconnected to room ${this.roomCode}`);
+        // Update the imposter reference if this player was the imposter
+        if (oldSocketId === this.gameState.imposter) {
+            this.gameState.imposter = socketId;
+        }
+        
+        // If the reconnected player was the current turn, make sure the turn is still valid
+        if (disconnectedInfo.wasCurrentTurn && this.gameState.status === 'playing') {
+            // Find the new position of the reconnected player
+            const newPosition = this.playerOrder.indexOf(socketId);
+            if (newPosition !== -1) {
+                this.gameState.currentTurn = newPosition;
+                console.log(`Restored turn to reconnected player ${playerName} at position ${newPosition}`);
+            }
+        }
+        
+        console.log(`Player ${playerName} reconnected to room ${this.roomCode} at position ${oldPosition !== -1 ? oldPosition : this.playerOrder.length - 1}`);
+        console.log(`Current turn after reconnection: ${this.gameState.currentTurn}, playerOrder: ${this.playerOrder.join(',')}`);
         
         return player;
     }
@@ -830,7 +860,9 @@ class GameRoom {
     }
 
     getCurrentPlayer() {
-        return this.playerOrder[this.gameState.currentTurn];
+        const currentPlayer = this.playerOrder[this.gameState.currentTurn];
+        console.log(`getCurrentPlayer: currentTurn=${this.gameState.currentTurn}, playerOrder=${this.playerOrder.join(',')}, result=${currentPlayer}`);
+        return currentPlayer;
     }
 
     getNextQuestion() {
@@ -894,7 +926,10 @@ class GameRoom {
             return { error: 'Hints not available in The Mole game' };
         }
         
-        if (this.getCurrentPlayer() !== playerId) {
+        const currentPlayer = this.getCurrentPlayer();
+        console.log(`Hint attempt: playerId=${playerId}, currentPlayer=${currentPlayer}, playerOrder=${this.playerOrder.join(',')}`);
+        
+        if (currentPlayer !== playerId) {
             return { error: 'Not your turn' };
         }
 
