@@ -917,7 +917,6 @@
                     <button id="custom-locations-btn" class="btn btn-info" onclick="showCustomLocations()" style="display: none;">🎯 Custom Locations</button>
                     <button class="btn btn-info" onclick="showScoreboard()">📊 Scoreboard</button>
                     <button class="btn btn-secondary" onclick="backToGameSelection()">← Back to Game Selection</button>
-                    <button class="btn btn-danger" onclick="leaveRoom()">🚪 Leave</button>
                 </div>
             </div>
 
@@ -1011,11 +1010,6 @@
                 <h3>📊 Current Scores</h3>
                 <div id="game-scoreboard-content"></div>
                 <button class="btn btn-info" onclick="showScoreboard()">View Full Scoreboard</button>
-            </div>
-
-            <!-- NEW: Leave button for game screen -->
-            <div style="text-align: center; margin-top: 2rem;">
-                <button class="btn btn-danger" onclick="leaveGame()">🚪 Leave Game</button>
             </div>
         </div>
 
@@ -1159,8 +1153,6 @@
         let currentGameType = ''; // NEW: Track current game type
         let currentRoomType = 'public'; // NEW: Track current room type
         let publicLobbies = []; // NEW: Store public lobbies data
-        let disconnectedFromRoom = null; // NEW: Track if player was disconnected
-        let disconnectTime = null; // NEW: Track when disconnection happened
 
         // NEW: Autocomplete variables
         let currentSuggestions = [];
@@ -2027,23 +2019,6 @@
                 botCount = data.botCount;
             }
             updateBotControls();
-            
-            // Check if we were disconnected and can reconnect
-            if (data.disconnectedPlayers && data.disconnectedPlayers.includes(actualPlayerName)) {
-                disconnectedFromRoom = {
-                    roomCode: currentRoom,
-                    playerName: actualPlayerName
-                };
-                disconnectTime = Date.now();
-                showWarning('You were disconnected! You can reconnect within 60 seconds.');
-                
-                // Set the room code in the join input for easy reconnection
-                document.getElementById('room-code').value = currentRoom;
-                
-                showScreen('home-screen');
-                document.getElementById('join-room-section').style.display = 'block';
-                checkForReconnection();
-            }
         });
 
         socket.on('game_started', (data) => {
@@ -2283,9 +2258,6 @@
         document.addEventListener('DOMContentLoaded', () => {
             populateLocationsList(locations); // Default to locations
             initializeAutocomplete();
-            
-            // Check for reconnection every 5 seconds
-            setInterval(checkForReconnection, 5000);
         });
 
         function updateLobbyPlayers(players) {

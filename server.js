@@ -3,7 +3,6 @@ const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
 const fs = require('fs');
-const allGameData = [];
 
 const app = express();
 const server = http.createServer(app);
@@ -1201,26 +1200,24 @@ class GameRoom {
     }
 
     endGame(winner, message) {
-        if (this.gameState.status === 'ended') {
-            console.warn('endGame called more than once – ignored.');
-            return;
-        }
-    
         console.log(`Game ended in room ${this.roomCode}: ${winner} - ${message}`);
+        
         this.gameState.status = 'ended';
         this.gameState.gameResult = {
-            winner,
-            message,
+            winner: winner,
+            message: message,
             location: this.gameState.location,
-            imposter: this.players.get(this.gameState.imposter).name
+            imposter: this.players.get(this.gameState.imposter)?.name || 'Unknown'
         };
-
-        this.currentGameData.outcome = winner;
-        this.updateScoreboardAfterGame(winner);
-        this.saveGameToHistory();
-        this.saveGameData();
         
-        console.log(`Game state after ending: status=${this.gameState.status}, winner=${winner}`);
+        // Update scoreboard
+        this.updateScoreboardAfterGame(winner);
+        
+        // Save to game history
+        this.saveGameToHistory();
+        
+        // Clean up disconnected players
+        this.disconnectedPlayers.clear();
     }
 
     saveGameData() {
@@ -1974,138 +1971,131 @@ io.on('connection', (socket) => {
         console.log('User disconnected:', socket.id);
         const room = findPlayerRoom(socket.id);
         if (room) {
-            const player = room.handlePlayerDisconnect(socket.id);
+            const player = room.players.get(socket.id);
+            if (!player) return;
             
-            if (room.players.size === 0 && room.disconnectedPlayers.size === 0) {
-                gameRooms.delete(room.roomCode);
-                console.log(`Room ${room.roomCode} deleted (no players left)`);
-                // Emit updated public lobbies to all clients
-                const publicLobbies = [];
-                for (const [roomCode, room] of gameRooms.entries()) {
-                    if (room.roomType === 'public' && room.gameState.status === 'waiting') {
-                        publicLobbies.push({
-                            roomCode: room.roomCode,
-                            gameType: room.gameType,
-                            playerCount: room.players.size,
-                            maxPlayers: 8,
-                            hostName: Array.from(room.players.values()).find(p => p.isHost)?.name || 'Unknown',
-                            usingCustomLocations: room.customLocations.length > 0,
-                            botCount: room.bots.size,
-                            createdAt: room.createdAt
-                        });
+            console.log(`Player ${player.name} disconnected from room ${room.roomCode}`);
+            
+            // Remove player from room
+            room.players.delete(socket.id);
+            
+            // If game is not in progress, handle as normal player leave
+            if (room.gameState.status !== 'playing') {
+                // Handle host transfer if needed
+                if (player.isHost && room.players.size > 0) {
+                    // Find the player who has been in the room the longest (excluding bots)
+                    const humanPlayers = Array.from(room.players.entries())
+                        .filter(([id, p]) => !p.isBot)
+                        .sort((a, b) => a[1].joinTime - b[1].joinTime);
+                    
+                    if (humanPlayers.length > 0) {
+                        const newHost = humanPlayers[0];
+                        newHost[1].isHost = true;
+                        room.hostId = newHost[0];
+                        console.log(`Host transferred to ${newHost[1].name}`);
                     }
                 }
-                publicLobbies.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-                io.emit('public_lobbies', publicLobbies.slice(0, 10));
-            } else {
-                // Clean up expired disconnections
-                const expiredPlayers = room.cleanupExpiredDisconnections();
                 
+                // Delete room if no players left
+                if (room.players.size === 0) {
+                    gameRooms.delete(room.roomCode);
+                    console.log(`Room ${room.roomCode} deleted (no players left)`);
+                    return;
+                }
+                
+                // Notify remaining players
                 io.to(room.roomCode).emit('player_left', {
-                    playerName: player?.name,
-                    players: Array.from(room.players.entries()).map(([id, player]) => ({
+                    playerName: player.name,
+                    players: Array.from(room.players.entries()).map(([id, p]) => ({
                         id, 
-                        name: player.name, 
-                        isHost: player.isHost,
-                        isReady: player.isReady,
-                        isBot: player.isBot
+                        name: p.name, 
+                        isHost: p.isHost,
+                        isReady: p.isReady,
+                        isBot: p.isBot
                     })),
                     scoreboard: room.getScoreboardData(),
                     roomType: room.roomType,
                     botCount: room.bots.size,
                     usingCustomLocations: room.customLocations.length > 0,
-                    gameType: room.gameType,
-                    disconnectedPlayers: Array.from(room.disconnectedPlayers.keys())
+                    gameType: room.gameType
+                });
+                return;
+            }
+            
+            // Game is in progress - handle based on player role
+            const isImposter = socket.id === room.gameState.imposter;
+            const totalPlayers = room.players.size + room.bots.size;
+            
+            console.log(`Game in progress: ${player.name} disconnected, isImposter=${isImposter}, totalPlayers=${totalPlayers}`);
+            
+            if (isImposter) {
+                // Imposter disconnected - end game
+                console.log(`Imposter ${player.name} disconnected - ending game`);
+                room.endGame('imposter_left', `${player.name} (the imposter) disconnected! No one wins.`);
+                io.to(room.roomCode).emit('game_over', room.gameState.gameResult);
+            } else if (totalPlayers < 3) {
+                // Not enough players to continue
+                console.log(`Not enough players (${totalPlayers}) to continue game`);
+                room.endGame('not_enough_players', `Not enough players to continue (${totalPlayers}/3 minimum).`);
+                io.to(room.roomCode).emit('game_over', room.gameState.gameResult);
+            } else {
+                // Continue game - remove player from turn order and adjust
+                console.log(`Continuing game without ${player.name}`);
+                
+                // Remove from player order
+                const playerIndex = room.playerOrder.indexOf(socket.id);
+                if (playerIndex !== -1) {
+                    room.playerOrder.splice(playerIndex, 1);
+                    
+                    // Adjust current turn if needed
+                    if (room.playerOrder.length > 0) {
+                        if (playerIndex <= room.gameState.currentTurn) {
+                            room.gameState.currentTurn = room.gameState.currentTurn % room.playerOrder.length;
+                        }
+                    }
+                }
+                
+                // Handle host transfer if needed
+                if (player.isHost) {
+                    const humanPlayers = Array.from(room.players.entries())
+                        .filter(([id, p]) => !p.isBot)
+                        .sort((a, b) => a[1].joinTime - b[1].joinTime);
+                    
+                    if (humanPlayers.length > 0) {
+                        const newHost = humanPlayers[0];
+                        newHost[1].isHost = true;
+                        room.hostId = newHost[0];
+                        console.log(`Host transferred to ${newHost[1].name}`);
+                    }
+                }
+                
+                // Notify remaining players
+                io.to(room.roomCode).emit('player_left', {
+                    playerName: player.name,
+                    players: Array.from(room.players.entries()).map(([id, p]) => ({
+                        id, 
+                        name: p.name, 
+                        isHost: p.isHost,
+                        isReady: p.isReady,
+                        isBot: p.isBot
+                    })),
+                    scoreboard: room.getScoreboardData(),
+                    roomType: room.roomType,
+                    botCount: room.bots.size,
+                    usingCustomLocations: room.customLocations.length > 0,
+                    gameType: room.gameType
                 });
                 
-                // If game is in progress, continue the game
-                if (room.gameState.status === 'playing') {
-                    room.players.forEach((player, socketId) => {
-                        if (!player.isBot) {
-                            io.to(socketId).emit('game_updated', room.getGameStateForPlayer(socketId));
-                        }
-                    });
-                    
-                    // Continue game flow
-                    setTimeout(() => {
-                        if (room.gameType === 'mole') {
-                            handleBotTurn(room);
-                        } else {
-                            handleHintTurn(room);
-                        }
-                    }, 1000);
-                }
+                // Continue game flow
+                setTimeout(() => {
+                    if (room.gameType === 'mole') {
+                        handleBotTurn(room);
+                    } else {
+                        handleHintTurn(room);
+                    }
+                }, 1000);
             }
         }
-    });
-
-    // NEW: Handle player reconnection
-    socket.on('reconnect_to_game', ({ roomCode, playerName }) => {
-        const room = gameRooms.get(roomCode);
-        if (!room) {
-            socket.emit('error', 'Room not found');
-            return;
-        }
-        
-        const reconnectedPlayer = room.handlePlayerReconnect(socket.id, playerName);
-        if (!reconnectedPlayer) {
-            socket.emit('error', 'Reconnection failed. Time window expired or player not found.');
-            return;
-        }
-        
-        socket.join(roomCode);
-        
-        // Update host status if needed
-        if (reconnectedPlayer.isHost) {
-            room.hostId = socket.id;
-        }
-        
-        socket.emit('reconnected', {
-            roomCode: room.roomCode,
-            isHost: reconnectedPlayer.isHost,
-            actualName: reconnectedPlayer.name,
-            gameType: room.gameType,
-            roomType: room.roomType
-        });
-        
-        // Send current game state
-        if (room.gameState.status === 'playing') {
-            socket.emit('game_started', room.getGameStateForPlayer(socket.id));
-        } else {
-            socket.emit('room_updated', { 
-                players: Array.from(room.players.entries()).map(([id, player]) => ({
-                    id, 
-                    name: player.name, 
-                    isHost: player.isHost,
-                    isReady: player.isReady,
-                    isBot: player.isBot
-                })),
-                scoreboard: room.getScoreboardData(),
-                roomType: room.roomType,
-                botCount: room.bots.size,
-                usingCustomLocations: room.customLocations.length > 0,
-                gameType: room.gameType
-            });
-        }
-        
-        // Notify other players
-        io.to(room.roomCode).emit('player_reconnected', {
-            playerName: reconnectedPlayer.name,
-            players: Array.from(room.players.entries()).map(([id, player]) => ({
-                id, 
-                name: player.name, 
-                isHost: player.isHost,
-                isReady: player.isReady,
-                isBot: player.isBot
-            })),
-            scoreboard: room.getScoreboardData(),
-            roomType: room.roomType,
-            botCount: room.bots.size,
-            usingCustomLocations: room.customLocations.length > 0,
-            gameType: room.gameType
-        });
-        
-        console.log(`${reconnectedPlayer.name} reconnected to room ${room.roomCode}`);
     });
 
     // NEW: Handle player leaving intentionally
