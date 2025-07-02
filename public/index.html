@@ -2833,7 +2833,10 @@
 
         // === SPOTIFY INTEGRATION ===
         const spotifyClientId = '4e94cdc6f9c544f8a74b67e5bf31a5bb';
-        const spotifyRedirectUri = 'http://127.0.0.1:8888/callback';
+        // Use Render URL for production, fallback to localhost:8888 for local dev
+        const spotifyRedirectUri = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+            ? 'http://127.0.0.1:8888/callback'
+            : 'https://jaceg22-github-io.onrender.com/callback';
         let spotifyAccessToken = null;
 
         function showSpotifyPlayer() {
