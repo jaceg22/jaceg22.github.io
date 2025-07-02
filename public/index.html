@@ -825,6 +825,17 @@
                         <button class="btn btn-primary">Play Rapper Imposter</button>
                     </div>
                 </div>
+
+                <!-- Spotify Integration on Home -->
+                <div style="text-align:center; margin-top:2rem;">
+                    <button id="spotify-login-btn-home" class="btn btn-info" style="margin-bottom:1rem;">
+                        <img src="https://developer.spotify.com/assets/branding-guidelines/icon3@2x.png" alt="Spotify" style="height:20px;vertical-align:middle;margin-right:8px;">
+                        Login with Spotify
+                    </button>
+                    <div id="spotify-player-home" style="margin-top:1rem; display:none;">
+                        <button class="btn btn-primary" onclick="playSpotifyTrack()">▶️ Play Music</button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -2825,16 +2836,35 @@
         const spotifyRedirectUri = 'http://127.0.0.1:8888/callback';
         let spotifyAccessToken = null;
 
-        document.getElementById('spotify-login-btn').onclick = function() {
-            const scope = 'streaming user-read-email user-read-private user-modify-playback-state user-read-playback-state';
-            const authUrl = `https://accounts.spotify.com/authorize?response_type=code&client_id=${spotifyClientId}&scope=${encodeURIComponent(scope)}&redirect_uri=${encodeURIComponent(spotifyRedirectUri)}`;
-            window.open(authUrl, 'spotify-login', 'width=500,height=700');
-        };
+        function showSpotifyPlayer() {
+            const playerDivs = [
+                document.getElementById('spotify-player'),
+                document.getElementById('spotify-player-home')
+            ];
+            playerDivs.forEach(div => { if (div) div.style.display = 'block'; });
+        }
+
+        function setupSpotifyButtons() {
+            const loginBtns = [
+                document.getElementById('spotify-login-btn'),
+                document.getElementById('spotify-login-btn-home')
+            ];
+            loginBtns.forEach(btn => {
+                if (btn) {
+                    btn.onclick = function() {
+                        const scope = 'streaming user-read-email user-read-private user-modify-playback-state user-read-playback-state';
+                        const authUrl = `https://accounts.spotify.com/authorize?response_type=code&client_id=${spotifyClientId}&scope=${encodeURIComponent(scope)}&redirect_uri=${encodeURIComponent(spotifyRedirectUri)}`;
+                        window.open(authUrl, 'spotify-login', 'width=500,height=700');
+                    };
+                }
+            });
+        }
+        setupSpotifyButtons();
 
         window.addEventListener('message', (event) => {
             if (event.data && event.data.access_token) {
                 spotifyAccessToken = event.data.access_token;
-                document.getElementById('spotify-player').style.display = 'block';
+                showSpotifyPlayer();
                 showSuccess('Spotify connected!');
             }
         });

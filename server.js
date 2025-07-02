@@ -2333,7 +2333,7 @@ function shouldBotBeReadyToVote(bot, room) {
     }
 }
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8888;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log('Game Collection: The Mole, NBA Imposter, and Rapper Imposter');
