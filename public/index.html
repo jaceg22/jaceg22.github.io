@@ -1174,6 +1174,33 @@
         </div>
     </div>
 
+    <!-- Add Spotify Music Browser Modal -->
+    <div id="spotify-browser-modal" class="modal">
+        <div class="modal-content large">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h3>🎵 Spotify Music Browser</h3>
+                <button class="btn btn-warning" onclick="hideSpotifyBrowser()">✕ Close</button>
+            </div>
+            <div class="scoreboard-tabs">
+                <button class="tab-btn active" id="spotify-tab-playlists" onclick="switchSpotifyTab('playlists')">My Playlists</button>
+                <button class="tab-btn" id="spotify-tab-search" onclick="switchSpotifyTab('search')">Search</button>
+            </div>
+            <div id="spotify-playlists-tab" class="tab-content active">
+                <div id="spotify-playlists-list">Loading playlists...</div>
+                <div id="spotify-playlist-tracks" style="margin-top:1rem;"></div>
+            </div>
+            <div id="spotify-search-tab" class="tab-content">
+                <div style="margin-bottom:1rem;">
+                    <input type="text" id="spotify-search-input" placeholder="Search songs, artists, albums..." style="width:70%;padding:8px;border-radius:6px;">
+                    <button class="btn btn-primary" onclick="searchSpotify()">Search</button>
+                </div>
+                <div id="spotify-search-results"></div>
+            </div>
+        </div>
+    </div>
+
+    <button id="spotify-browse-btn" class="btn btn-info" style="display:none;margin-top:0.5rem;">🎵 Browse Spotify</button>
+
     <script>
         const socket = io();
         let gameState = {};
@@ -2868,6 +2895,8 @@
                 document.getElementById('spotify-player-home')
             ];
             playerDivs.forEach(div => { if (div) div.style.display = 'block'; });
+            // Show browse button after login
+            document.getElementById('spotify-browse-btn').style.display = 'inline-block';
         }
 
         function showSpotifyPlayerUI() {
@@ -3061,6 +3090,158 @@
         document.getElementById('spotify-pause-btn-home')?.addEventListener('click', spotifyPause);
         document.getElementById('spotify-next-btn-home')?.addEventListener('click', spotifyNext);
         document.getElementById('spotify-prev-btn-home')?.addEventListener('click', spotifyPrev);
+
+        // === SPOTIFY BROWSER MODAL ===
+        function showSpotifyBrowser() {
+            document.getElementById('spotify-browser-modal').classList.add('active');
+            switchSpotifyTab('playlists');
+            loadSpotifyPlaylists();
+        }
+        function hideSpotifyBrowser() {
+            document.getElementById('spotify-browser-modal').classList.remove('active');
+            document.getElementById('spotify-playlist-tracks').innerHTML = '';
+        }
+        document.getElementById('spotify-browse-btn').onclick = showSpotifyBrowser;
+        function switchSpotifyTab(tab) {
+            document.getElementById('spotify-tab-playlists').classList.remove('active');
+            document.getElementById('spotify-tab-search').classList.remove('active');
+            document.getElementById('spotify-playlists-tab').classList.remove('active');
+            document.getElementById('spotify-search-tab').classList.remove('active');
+            if (tab === 'playlists') {
+                document.getElementById('spotify-tab-playlists').classList.add('active');
+                document.getElementById('spotify-playlists-tab').classList.add('active');
+            } else {
+                document.getElementById('spotify-tab-search').classList.add('active');
+                document.getElementById('spotify-search-tab').classList.add('active');
+            }
+        }
+        // --- Playlists ---
+        function loadSpotifyPlaylists() {
+            const listDiv = document.getElementById('spotify-playlists-list');
+            listDiv.innerHTML = 'Loading playlists...';
+            fetch('https://api.spotify.com/v1/me/playlists?limit=50', {
+                headers: { 'Authorization': 'Bearer ' + spotifyAccessToken }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (!data.items || data.items.length === 0) {
+                    listDiv.innerHTML = '<p>No playlists found.</p>';
+                    return;
+                }
+                let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;">';
+                data.items.forEach(pl => {
+                    html += `<div style="background:rgba(52,73,94,0.8);padding:1rem;border-radius:10px;text-align:center;cursor:pointer;" onclick="loadSpotifyPlaylistTracks('${pl.id}','${pl.name.replace(/'/g,"&#39;")}")">
+                        <img src="${pl.images[0]?.url||''}" style="width:100px;height:100px;border-radius:8px;"><br>
+                        <strong>${pl.name}</strong><br>
+                        <span style="font-size:0.9em;opacity:0.7;">${pl.tracks.total} tracks</span>
+                    </div>`;
+                });
+                html += '</div>';
+                listDiv.innerHTML = html;
+            });
+        }
+        function loadSpotifyPlaylistTracks(playlistId, playlistName) {
+            const tracksDiv = document.getElementById('spotify-playlist-tracks');
+            tracksDiv.innerHTML = `<h4>${playlistName}</h4>Loading tracks...`;
+            fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`, {
+                headers: { 'Authorization': 'Bearer ' + spotifyAccessToken }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (!data.items || data.items.length === 0) {
+                    tracksDiv.innerHTML = '<p>No tracks found.</p>';
+                    return;
+                }
+                let html = '<div style="max-height:300px;overflow-y:auto;">';
+                data.items.forEach(item => {
+                    const t = item.track;
+                    html += `<div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.5rem;">
+                        <img src="${t.album.images[0]?.url||''}" style="width:40px;height:40px;border-radius:4px;">
+                        <div style="flex:1;">
+                            <strong>${t.name}</strong><br><span style="font-size:0.9em;opacity:0.7;">${t.artists.map(a=>a.name).join(', ')}</span>
+                        </div>
+                        <button class="btn btn-primary" onclick="playSpotifyTrackId('${t.id}')">▶️ Play</button>
+                        <button class="btn btn-secondary" onclick="queueSpotifyTrack('${t.id}')">➕ Queue</button>
+                    </div>`;
+                });
+                html += '</div>';
+                tracksDiv.innerHTML = html;
+            });
+        }
+        // --- Search ---
+        function searchSpotify() {
+            const q = document.getElementById('spotify-search-input').value.trim();
+            if (!q) return;
+            const resultsDiv = document.getElementById('spotify-search-results');
+            resultsDiv.innerHTML = 'Searching...';
+            fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track,artist,album&limit=20`, {
+                headers: { 'Authorization': 'Bearer ' + spotifyAccessToken }
+            })
+            .then(res => res.json())
+            .then(data => {
+                let html = '';
+                if (data.tracks && data.tracks.items.length > 0) {
+                    html += '<h4>Tracks</h4>';
+                    data.tracks.items.forEach(t => {
+                        html += `<div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.5rem;">
+                            <img src="${t.album.images[0]?.url||''}" style="width:40px;height:40px;border-radius:4px;">
+                            <div style="flex:1;">
+                                <strong>${t.name}</strong><br><span style="font-size:0.9em;opacity:0.7;">${t.artists.map(a=>a.name).join(', ')}</span>
+                            </div>
+                            <button class="btn btn-primary" onclick="playSpotifyTrackId('${t.id}')">▶️ Play</button>
+                            <button class="btn btn-secondary" onclick="queueSpotifyTrack('${t.id}')">➕ Queue</button>
+                        </div>`;
+                    });
+                }
+                if (data.artists && data.artists.items.length > 0) {
+                    html += '<h4>Artists</h4>';
+                    data.artists.items.forEach(a => {
+                        html += `<div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.5rem;">
+                            <img src="${a.images[0]?.url||''}" style="width:40px;height:40px;border-radius:4px;">
+                            <div style="flex:1;">
+                                <strong>${a.name}</strong>
+                            </div>
+                        </div>`;
+                    });
+                }
+                if (data.albums && data.albums.items.length > 0) {
+                    html += '<h4>Albums</h4>';
+                    data.albums.items.forEach(al => {
+                        html += `<div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.5rem;">
+                            <img src="${al.images[0]?.url||''}" style="width:40px;height:40px;border-radius:4px;">
+                            <div style="flex:1;">
+                                <strong>${al.name}</strong><br><span style="font-size:0.9em;opacity:0.7;">${al.artists.map(a=>a.name).join(', ')}</span>
+                            </div>
+                        </div>`;
+                    });
+                }
+                if (!html) html = '<p>No results found.</p>';
+                resultsDiv.innerHTML = html;
+            });
+        }
+        // --- Play/Queue helpers ---
+        function playSpotifyTrackId(trackId) {
+            if (!spotifyAccessToken) return;
+            if (spotifyIsPremium && spotifyPlayerReady && spotifyDeviceId) {
+                fetch('https://api.spotify.com/v1/me/player/play?device_id=' + spotifyDeviceId, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': 'Bearer ' + spotifyAccessToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ uris: ['spotify:track:' + trackId] })
+                });
+            } else {
+                playSpotifyPreview(trackId);
+            }
+        }
+        function queueSpotifyTrack(trackId) {
+            if (!spotifyAccessToken || !spotifyIsPremium || !spotifyPlayerReady || !spotifyDeviceId) return;
+            fetch('https://api.spotify.com/v1/me/player/queue?uri=spotify:track:' + trackId + '&device_id=' + spotifyDeviceId, {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + spotifyAccessToken }
+            });
+        }
     </script>
 </body>
 </html>
