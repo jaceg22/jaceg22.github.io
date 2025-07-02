@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🎮 Game Collection - Multiplayer</title>
     <script src="/socket.io/socket.io.js"></script>
+    <!-- Add Spotify Web Playback SDK -->
+    <script src="https://sdk.scdn.co/spotify-player.js"></script>
     <style>
         * {
             margin: 0;
@@ -833,7 +835,15 @@
                         Login with Spotify
                     </button>
                     <div id="spotify-player-home" style="margin-top:1rem; display:none;">
+                        <div id="spotify-player-ui-home" style="display:none;">
+                            <div id="spotify-track-info-home"></div>
+                            <button class="btn btn-primary" id="spotify-prev-btn-home">⏮️</button>
+                            <button class="btn btn-primary" id="spotify-play-btn-home">▶️</button>
+                            <button class="btn btn-primary" id="spotify-pause-btn-home">⏸️</button>
+                            <button class="btn btn-primary" id="spotify-next-btn-home">⏭️</button>
+                        </div>
                         <button class="btn btn-primary" onclick="playSpotifyTrack()">▶️ Play Music</button>
+                        <div id="spotify-premium-warning-home" class="warning" style="display:none;"></div>
                     </div>
                 </div>
             </div>
@@ -863,7 +873,15 @@
                         Login with Spotify
                     </button>
                     <div id="spotify-player" style="margin-top:1rem; display:none;">
+                        <div id="spotify-player-ui" style="display:none;">
+                            <div id="spotify-track-info"></div>
+                            <button class="btn btn-primary" id="spotify-prev-btn">⏮️</button>
+                            <button class="btn btn-primary" id="spotify-play-btn">▶️</button>
+                            <button class="btn btn-primary" id="spotify-pause-btn">⏸️</button>
+                            <button class="btn btn-primary" id="spotify-next-btn">⏭️</button>
+                        </div>
                         <button class="btn btn-primary" onclick="playSpotifyTrack()">▶️ Play Music</button>
+                        <div id="spotify-premium-warning" class="warning" style="display:none;"></div>
                     </div>
                 </div>
 
@@ -2838,6 +2856,11 @@
             ? 'http://127.0.0.1:8888/callback'
             : 'https://jaceg22-github-io.onrender.com/callback';
         let spotifyAccessToken = null;
+        let spotifyPlayer = null;
+        let spotifyPlayerReady = false;
+        let spotifyIsPremium = false;
+        let spotifyCurrentTrack = null;
+        let spotifyDeviceId = null;
 
         function showSpotifyPlayer() {
             const playerDivs = [
@@ -2845,6 +2868,42 @@
                 document.getElementById('spotify-player-home')
             ];
             playerDivs.forEach(div => { if (div) div.style.display = 'block'; });
+        }
+
+        function showSpotifyPlayerUI() {
+            const uiDivs = [
+                document.getElementById('spotify-player-ui'),
+                document.getElementById('spotify-player-ui-home')
+            ];
+            uiDivs.forEach(div => { if (div) div.style.display = 'block'; });
+        }
+
+        function hideSpotifyPlayerUI() {
+            const uiDivs = [
+                document.getElementById('spotify-player-ui'),
+                document.getElementById('spotify-player-ui-home')
+            ];
+            uiDivs.forEach(div => { if (div) div.style.display = 'none'; });
+        }
+
+        function showSpotifyPremiumWarning(msg) {
+            const warnings = [
+                document.getElementById('spotify-premium-warning'),
+                document.getElementById('spotify-premium-warning-home')
+            ];
+            warnings.forEach(div => {
+                if (div) {
+                    div.textContent = msg;
+                    div.style.display = 'block';
+                }
+            });
+        }
+        function hideSpotifyPremiumWarning() {
+            const warnings = [
+                document.getElementById('spotify-premium-warning'),
+                document.getElementById('spotify-premium-warning-home')
+            ];
+            warnings.forEach(div => { if (div) div.style.display = 'none'; });
         }
 
         function setupSpotifyButtons() {
@@ -2868,32 +2927,140 @@
             if (event.data && event.data.access_token) {
                 spotifyAccessToken = event.data.access_token;
                 showSpotifyPlayer();
+                getSpotifyUserProfile();
+                initializeSpotifyWebPlayback();
                 showSuccess('Spotify connected!');
             }
         });
+
+        function getSpotifyUserProfile() {
+            fetch('https://api.spotify.com/v1/me', {
+                headers: { 'Authorization': 'Bearer ' + spotifyAccessToken }
+            })
+            .then(res => res.json())
+            .then(data => {
+                spotifyIsPremium = data.product === 'premium';
+                if (!spotifyIsPremium) {
+                    showSpotifyPremiumWarning('Spotify Premium is required for in-browser playback. You can play 30s previews.');
+                } else {
+                    hideSpotifyPremiumWarning();
+                }
+            });
+        }
+
+        function initializeSpotifyWebPlayback() {
+            if (!window.Spotify) {
+                showSpotifyPremiumWarning('Spotify Web Playback SDK not loaded.');
+                return;
+            }
+            if (!spotifyAccessToken) return;
+            if (spotifyPlayer) {
+                spotifyPlayer.disconnect();
+                spotifyPlayer = null;
+            }
+            spotifyPlayer = new Spotify.Player({
+                name: 'Game Collection Web Player',
+                getOAuthToken: cb => { cb(spotifyAccessToken); },
+                volume: 0.8
+            });
+            spotifyPlayer.addListener('ready', ({ device_id }) => {
+                spotifyPlayerReady = true;
+                spotifyDeviceId = device_id;
+                showSpotifyPlayerUI();
+            });
+            spotifyPlayer.addListener('not_ready', () => {
+                spotifyPlayerReady = false;
+            });
+            spotifyPlayer.addListener('player_state_changed', state => {
+                if (!state) return;
+                spotifyCurrentTrack = state.track_window.current_track;
+                updateSpotifyTrackInfo();
+            });
+            spotifyPlayer.connect();
+        }
+
+        function updateSpotifyTrackInfo() {
+            const infoDivs = [
+                document.getElementById('spotify-track-info'),
+                document.getElementById('spotify-track-info-home')
+            ];
+            if (spotifyCurrentTrack) {
+                infoDivs.forEach(div => {
+                    if (div) {
+                        div.innerHTML = `<img src="${spotifyCurrentTrack.album.images[0]?.url}" style="height:40px;vertical-align:middle;margin-right:8px;">${spotifyCurrentTrack.name} - ${spotifyCurrentTrack.artists.map(a=>a.name).join(', ')}`;
+                    }
+                });
+            } else {
+                infoDivs.forEach(div => { if (div) div.textContent = ''; });
+            }
+        }
 
         function playSpotifyTrack() {
             if (!spotifyAccessToken) {
                 showError('Connect Spotify first!');
                 return;
             }
-            fetch('https://api.spotify.com/v1/me/player/play', {
-                method: 'PUT',
-                headers: {
-                    'Authorization': 'Bearer ' + spotifyAccessToken,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    uris: ['spotify:track:3n3Ppam7vgaVa1iaRUc9Lp'] // Example track
-                })
-            }).then(res => {
-                if (res.status === 204) {
-                    showSuccess('Playing on your Spotify device!');
+            if (spotifyIsPremium && spotifyPlayerReady && spotifyDeviceId) {
+                fetch('https://api.spotify.com/v1/me/player/play?device_id=' + spotifyDeviceId, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': 'Bearer ' + spotifyAccessToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        uris: ['spotify:track:3n3Ppam7vgaVa1iaRUc9Lp'] // Example track
+                    })
+                }).then(res => {
+                    if (res.status === 204) {
+                        showSuccess('Playing in browser!');
+                    } else {
+                        showError('Failed to play. Try opening Spotify on your device.');
+                    }
+                });
+            } else {
+                // Fallback: play preview
+                playSpotifyPreview('3n3Ppam7vgaVa1iaRUc9Lp');
+            }
+        }
+
+        function playSpotifyPreview(trackId) {
+            // Play 30s preview using HTML5 audio
+            fetch('https://api.spotify.com/v1/tracks/' + trackId, {
+                headers: { 'Authorization': 'Bearer ' + spotifyAccessToken }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.preview_url) {
+                    const audio = new Audio(data.preview_url);
+                    audio.play();
+                    showSpotifyPremiumWarning('Playing 30s preview. Upgrade to Premium for full playback.');
                 } else {
-                    showError('Failed to play. Open Spotify on your device first.');
+                    showError('No preview available for this track.');
                 }
             });
         }
+
+        // Player controls
+        function spotifyPlay() {
+            if (spotifyIsPremium && spotifyPlayerReady) spotifyPlayer.resume();
+        }
+        function spotifyPause() {
+            if (spotifyIsPremium && spotifyPlayerReady) spotifyPlayer.pause();
+        }
+        function spotifyNext() {
+            if (spotifyIsPremium && spotifyPlayerReady) spotifyPlayer.nextTrack();
+        }
+        function spotifyPrev() {
+            if (spotifyIsPremium && spotifyPlayerReady) spotifyPlayer.previousTrack();
+        }
+        document.getElementById('spotify-play-btn')?.addEventListener('click', spotifyPlay);
+        document.getElementById('spotify-pause-btn')?.addEventListener('click', spotifyPause);
+        document.getElementById('spotify-next-btn')?.addEventListener('click', spotifyNext);
+        document.getElementById('spotify-prev-btn')?.addEventListener('click', spotifyPrev);
+        document.getElementById('spotify-play-btn-home')?.addEventListener('click', spotifyPlay);
+        document.getElementById('spotify-pause-btn-home')?.addEventListener('click', spotifyPause);
+        document.getElementById('spotify-next-btn-home')?.addEventListener('click', spotifyNext);
+        document.getElementById('spotify-prev-btn-home')?.addEventListener('click', spotifyPrev);
     </script>
 </body>
 </html>
