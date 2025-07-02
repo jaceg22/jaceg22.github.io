@@ -3,6 +3,7 @@ const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
 const fs = require('fs');
+const axios = require('axios');
 
 const app = express();
 const server = http.createServer(app);
@@ -2338,4 +2339,35 @@ server.listen(PORT, () => {
     console.log('Game Collection: The Mole, NBA Imposter, and Rapper Imposter');
     console.log('Enhanced lobby system: Public, Private, and Locked rooms');
     console.log('Bot support enabled for The Mole only');
+});
+
+// === SPOTIFY OAUTH CALLBACK ===
+const spotifyClientId = '4e94cdc6f9c544f8a74b67e5bf31a5bb';
+const spotifyClientSecret = '036dc9cdfd0a4bb0a586d9ec606930af';
+const spotifyRedirectUri = 'http://localhost:8888/callback';
+
+app.get('/callback', async (req, res) => {
+    const code = req.query.code || null;
+    if (!code) return res.send('No code provided');
+    try {
+        const params = new URLSearchParams();
+        params.append('code', code);
+        params.append('redirect_uri', spotifyRedirectUri);
+        params.append('grant_type', 'authorization_code');
+        params.append('client_id', spotifyClientId);
+        params.append('client_secret', spotifyClientSecret);
+        const response = await axios.post('https://accounts.spotify.com/api/token', params, {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+        });
+        // Send access token to opener window
+        res.send(`
+            <script>
+                window.opener && window.opener.postMessage(${JSON.stringify(response.data)}, '*');
+                window.close();
+            </script>
+            <pre>${JSON.stringify(response.data, null, 2)}</pre>
+        `);
+    } catch (err) {
+        res.send('Error exchanging code: ' + err);
+    }
 });

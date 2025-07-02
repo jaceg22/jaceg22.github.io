@@ -839,10 +839,21 @@
                     <input type="text" id="player-name" placeholder="Enter your name" maxlength="20">
                 </div>
 
-                <div style="text-align: center;">
+                <div style="text-align: center; margin-top: 2rem;">
                     <button class="btn btn-primary" onclick="createRoom()">🎮 Create Room</button>
                     <button class="btn btn-warning" onclick="showJoinRoom()">🚪 Join Room</button>
                     <button class="btn btn-secondary" onclick="backToGameSelection()">← Back to Game Selection</button>
+                </div>
+
+                <!-- Spotify Integration -->
+                <div style="text-align:center; margin-top:2rem;">
+                    <button id="spotify-login-btn" class="btn btn-info" style="margin-bottom:1rem;">
+                        <img src="https://developer.spotify.com/assets/branding-guidelines/icon3@2x.png" alt="Spotify" style="height:20px;vertical-align:middle;margin-right:8px;">
+                        Login with Spotify
+                    </button>
+                    <div id="spotify-player" style="margin-top:1rem; display:none;">
+                        <button class="btn btn-primary" onclick="playSpotifyTrack()">▶️ Play Music</button>
+                    </div>
                 </div>
 
                 <div id="join-room-section" style="display: none; margin-top: 1rem;">
@@ -2807,6 +2818,48 @@
         function confirmLeaveGame() {
             hideModal('leave-game-modal');
             leaveRoom();
+        }
+
+        // === SPOTIFY INTEGRATION ===
+        const spotifyClientId = '4e94cdc6f9c544f8a74b67e5bf31a5bb';
+        const spotifyRedirectUri = 'http://127.0.0.1:8888/callback';
+        let spotifyAccessToken = null;
+
+        document.getElementById('spotify-login-btn').onclick = function() {
+            const scope = 'streaming user-read-email user-read-private user-modify-playback-state user-read-playback-state';
+            const authUrl = `https://accounts.spotify.com/authorize?response_type=code&client_id=${spotifyClientId}&scope=${encodeURIComponent(scope)}&redirect_uri=${encodeURIComponent(spotifyRedirectUri)}`;
+            window.open(authUrl, 'spotify-login', 'width=500,height=700');
+        };
+
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.access_token) {
+                spotifyAccessToken = event.data.access_token;
+                document.getElementById('spotify-player').style.display = 'block';
+                showSuccess('Spotify connected!');
+            }
+        });
+
+        function playSpotifyTrack() {
+            if (!spotifyAccessToken) {
+                showError('Connect Spotify first!');
+                return;
+            }
+            fetch('https://api.spotify.com/v1/me/player/play', {
+                method: 'PUT',
+                headers: {
+                    'Authorization': 'Bearer ' + spotifyAccessToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    uris: ['spotify:track:3n3Ppam7vgaVa1iaRUc9Lp'] // Example track
+                })
+            }).then(res => {
+                if (res.status === 204) {
+                    showSuccess('Playing on your Spotify device!');
+                } else {
+                    showError('Failed to play. Open Spotify on your device first.');
+                }
+            });
         }
     </script>
 </body>
