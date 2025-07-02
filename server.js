@@ -2344,7 +2344,7 @@ server.listen(PORT, () => {
 // === SPOTIFY OAUTH CALLBACK ===
 const spotifyClientId = '4e94cdc6f9c544f8a74b67e5bf31a5bb';
 const spotifyClientSecret = '036dc9cdfd0a4bb0a586d9ec606930af';
-const spotifyRedirectUri = 'http://localhost:8888/callback';
+const spotifyRedirectUri = 'http://127.0.0.1:8888/callback';
 
 app.get('/callback', async (req, res) => {
     const code = req.query.code || null;
