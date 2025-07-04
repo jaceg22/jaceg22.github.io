@@ -1530,6 +1530,34 @@
 
     <script>
         const socket = io();
+        
+        // Comprehensive Socket Debugging
+        console.log('🔌 Socket.io initialized');
+        
+        // Log all incoming events
+        const originalEmit = socket.emit;
+        socket.emit = function(...args) {
+            console.log('📤 EMIT:', args[0], args.slice(1));
+            return originalEmit.apply(this, args);
+        };
+        
+        // Log all socket events
+        socket.onAny((eventName, ...args) => {
+            console.log('📥 RECEIVED:', eventName, args);
+        });
+        
+        socket.on('connect', () => {
+            console.log('🔌 Socket connected:', socket.id);
+        });
+        
+        socket.on('disconnect', (reason) => {
+            console.log('🔌 Socket disconnected:', reason);
+        });
+        
+        socket.on('connect_error', (error) => {
+            console.log('🔌 Socket connection error:', error);
+        });
+        
         let gameState = {};
         let currentRoom = '';
         let isHost = false;
@@ -1628,13 +1656,26 @@
                 document.getElementById('game-description').textContent = 'Give hints about rappers and find the imposter!';
             }
 
+            console.log('🎮 About to show home screen for gameType:', currentGameType);
             showScreen('home-screen');
+            console.log('🎮 Switched to home screen, game selected:', currentGameType);
         }
 
         function backToGameSelection() {
+            console.log('🔙 backToGameSelection called');
+            console.log('🔙 Previous state - currentGameType:', currentGameType, 'currentRoom:', currentRoom, 'isHost:', isHost);
+            
+            // Try to properly leave the current room before switching
+            if (currentRoom) {
+                console.log('🔙 Leaving current room:', currentRoom);
+                socket.emit('leave_room');
+            }
+            
             currentGameType = '';
             currentRoom = '';
             isHost = false;
+            
+            console.log('🔙 State cleared - currentGameType:', currentGameType, 'currentRoom:', currentRoom, 'isHost:', isHost);
             playerName = '';
             actualPlayerName = '';
             isReady = false;
@@ -1804,11 +1845,14 @@
         }
 
         function createRoom() {
+            console.log('🏗️ createRoom called');
+            console.log('🏗️ Current gameType:', currentGameType);
             playerName = document.getElementById('player-name').value.trim();
             if (!playerName) {
                 showError('Please enter your name');
                 return;
             }
+            console.log('🏗️ Creating room with playerName:', playerName, 'gameType:', currentGameType);
             socket.emit('create_room', { playerName, gameType: currentGameType });
         }
 
@@ -1855,74 +1899,32 @@
         // Bot management functions (only for The Mole)
         function addBot() {
             console.log('🤖 AddBot function called');
-            console.log('🤖 isHost:', isHost);
-            console.log('🤖 currentGameType:', currentGameType);
-            console.log('🤖 gameState:', gameState);
             
             if (!isHost) {
-                console.log('🤖 ERROR: Not host');
                 showError('Only the host can add bots');
                 return;
             }
             
             const totalPlayers = document.querySelectorAll('.player-card').length;
-            console.log('🤖 Total players found:', totalPlayers);
-            console.log('🤖 Player cards:', document.querySelectorAll('.player-card'));
             
             if (totalPlayers >= 8) {
-                console.log('🤖 ERROR: Room full');
                 showError('Room is full (8/8 players)');
                 return;
             }
             
-            console.log('🤖 usingCustomLocations:', usingCustomLocations);
             if (usingCustomLocations) {
-                console.log('🤖 ERROR: Custom locations enabled');
                 showError('Cannot add bots when using custom locations');
                 return;
             }
             
-            console.log('🤖 About to emit add_bot event');
-            console.log('🤖 Socket connected:', socket.connected);
-            console.log('🤖 Current room when emitting:', currentRoom);
+            console.log('🤖 Adding bot to room:', currentRoom);
             
-            // Add a timeout to detect if server doesn't respond
-            const botAddTimeout = setTimeout(() => {
-                console.log('🤖 ERROR: No response from server after 5 seconds');
-                showError('Server did not respond to bot addition request');
-            }, 5000);
-            
-            // Store timeout ID so we can clear it if we get a response
-            window.lastBotAddTimeout = botAddTimeout;
-            
-            // First, let's check what events the server is listening for
-            console.log('🤖 Socket.io listeners:', socket.listeners());
-            
-            const botData = { 
-                difficulty: 'medium',
-                room: currentRoom,
-                gameType: currentGameType
-            };
-            console.log('🤖 Emitting bot data:', botData);
-            
-            // First try to update the room's game type (in case server is out of sync)
-            console.log('🤖 Attempting to sync room game type with server');
-            socket.emit('update_room_game_type', { 
-                room: currentRoom, 
-                gameType: currentGameType 
-            });
-            
-            socket.emit('add_bot', botData);
-            console.log('🤖 add_bot event emitted with room:', currentRoom);
-            
-            // Also try the acknowledgment callback version
-            socket.emit('add_bot', botData, (response) => {
-                console.log('🤖 Server acknowledgment received:', response);
-                if (window.lastBotAddTimeout) {
-                    clearTimeout(window.lastBotAddTimeout);
-                    window.lastBotAddTimeout = null;
-                }
-            });
+            // Now that we know it works, just send one clean request
+            setTimeout(() => {
+                console.log('🤖 Attempting single bot addition');
+                socket.emit('add_bot', { difficulty: 'medium' });
+                console.log('🤖 Single add_bot event emitted');
+            }, 500);
         }
 
         function removeBot(botId) {
@@ -1967,7 +1969,10 @@
             // Safety check: reset bot count if no active room
             if (!currentRoom) {
                 console.log('🤖 No active room, resetting bot count');
+                console.log('🤖 currentRoom is:', currentRoom, 'type:', typeof currentRoom);
                 botCount = 0;
+            } else {
+                console.log('🤖 Active room found:', currentRoom);
             }
             
             const botCountSpan = document.getElementById('bot-count');
@@ -2445,11 +2450,15 @@
 
         // Socket event handlers
         socket.on('room_created', (data) => {
+            console.log('🏠 ROOM_CREATED event received:', data);
+            console.log('🏠 Previous room:', currentRoom, 'New room:', data.roomCode);
+            console.log('🏠 Previous gameType:', currentGameType, 'Room gameType:', data.gameType);
             leftRoom = false;
             currentRoom = data.roomCode;
             isHost = data.isHost;
             actualPlayerName = data.actualName;
             playerName = actualPlayerName;
+            console.log('🏠 Room state updated - currentRoom:', currentRoom, 'isHost:', isHost);
             currentGameType = data.gameType;
             currentRoomType = data.roomType || 'public';
             document.getElementById('room-display').textContent = currentRoom;
@@ -2459,11 +2468,15 @@
         });
 
         socket.on('room_joined', (data) => {
+            console.log('🏠 ROOM_JOINED event received:', data);
+            console.log('🏠 Previous room:', currentRoom, 'Joined room:', data.roomCode);
+            console.log('🏠 Previous gameType:', currentGameType, 'Room gameType:', data.gameType);
             leftRoom = false;
             currentRoom = data.roomCode;
             isHost = data.isHost;
             actualPlayerName = data.actualName;
             playerName = actualPlayerName;
+            console.log('🏠 Room state updated - currentRoom:', currentRoom, 'isHost:', isHost);
             currentGameType = data.gameType;
             currentRoomType = data.roomType || 'public';
             document.getElementById('room-display').textContent = currentRoom;
@@ -2532,6 +2545,13 @@
             }
             
             showError(`Bot error: ${data.message || 'Unknown error'}`);
+        });
+
+        socket.on('room_info', (data) => {
+            console.log('🏠 ROOM_INFO received from server:', data);
+            console.log('🏠 Server thinks room gameType is:', data.gameType);
+            console.log('🏠 Client thinks room gameType is:', currentGameType);
+            console.log('🏠 Room info match:', data.gameType === currentGameType);
         });
 
         socket.on('player_kicked', (data) => {
@@ -2764,6 +2784,23 @@
         });
 
         socket.on('error', (message) => {
+            console.log('❌ Generic error received:', message);
+            
+            // Handle specific bot-related errors
+            if (message.includes('Bots are only available for The Mole game')) {
+                console.log('❌ SERVER BUG: Server thinks room is not mole game!');
+                console.log('❌ Client state - gameType:', currentGameType, 'room:', currentRoom, 'isHost:', isHost);
+                
+                // Clear timeout since we got a response (even if wrong)
+                if (window.lastBotAddTimeout) {
+                    clearTimeout(window.lastBotAddTimeout);
+                    window.lastBotAddTimeout = null;
+                }
+                
+                showError(`Server Error: ${message}\n\nDebug Info:\n- Client gameType: ${currentGameType}\n- Room: ${currentRoom}\n- Is Host: ${isHost}\n\nThis appears to be a server-side validation bug.`);
+                return;
+            }
+            
             showError(message);
         });
 
@@ -3427,10 +3464,13 @@
 
         let leftRoom = false; // Track if player left intentionally
         function leaveRoom() {
+            console.log('🚪 leaveRoom called');
+            console.log('🚪 Current state - currentGameType:', currentGameType, 'currentRoom:', currentRoom, 'isHost:', isHost);
             leftRoom = true;
             socket.emit('leave_room');
             showScreen('home-screen');
             showInfo('You left the room.');
+            console.log('🚪 Left room, leftRoom flag set to:', leftRoom);
         }
 
         // NEW: Leave button for game screen
