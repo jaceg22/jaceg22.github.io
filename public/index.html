@@ -1092,6 +1092,14 @@
                             const main = document.getElementById('spotify-main');
                             document.querySelectorAll('.spotify-tab-btn').forEach(btn => btn.classList.remove('active'));
                             document.querySelector('.spotify-tab-btn[data-tab="' + tab + '"]').classList.add('active');
+                            
+                            // Clear dashboard updates when switching away
+                            if (tab !== 'dashboard' && spotifyDashboardUpdateInterval) {
+                                clearInterval(spotifyDashboardUpdateInterval);
+                                spotifyDashboardUpdateInterval = null;
+                                console.log('🎵 Stopped periodic updates for currently playing');
+                            }
+                            
                             if (tab === 'dashboard') {
                                 showSpotifyDashboard();
                             } else if (tab === 'stats') {
@@ -1841,6 +1849,13 @@
             if (modal) {
                 modal.classList.remove('active');
                 modal.style.display = 'none';
+                
+                // Clear Spotify dashboard updates when closing Spotify modal
+                if (modalId === 'spotify-popup' && spotifyDashboardUpdateInterval) {
+                    clearInterval(spotifyDashboardUpdateInterval);
+                    spotifyDashboardUpdateInterval = null;
+                    console.log('🎵 Stopped periodic updates when closing Spotify modal');
+                }
             }
         }
 
@@ -3758,10 +3773,71 @@
             openSpotifyFromLobby();
         }
 
+        let spotifyDashboardUpdateInterval = null;
+
         function showSpotifyDashboard() {
             const main = document.getElementById('spotify-main');
             main.innerHTML = '<div style="text-align:center;padding:2rem;"><span class="loading-spinner"></span> Loading Dashboard...</div>';
             renderSpotifyDashboard();
+            
+            // Start periodic updates for currently playing
+            if (spotifyDashboardUpdateInterval) {
+                clearInterval(spotifyDashboardUpdateInterval);
+            }
+            spotifyDashboardUpdateInterval = setInterval(() => {
+                updateCurrentlyPlaying();
+            }, 10000); // Update every 10 seconds
+            console.log('🎵 Started periodic updates for currently playing');
+        }
+
+        async function updateCurrentlyPlaying() {
+            try {
+                console.log('🎵 Updating currently playing...');
+                const response = await fetch('https://api.spotify.com/v1/me/player/currently-playing', { 
+                    headers: { 'Authorization': 'Bearer ' + spotifyAccessToken } 
+                });
+                
+                let nowPlaying = null;
+                if (response.ok) {
+                    try {
+                        nowPlaying = await response.json();
+                    } catch (e) {
+                        console.log('No currently playing track');
+                    }
+                }
+                
+                // Find the Now Playing section and update it
+                const nowPlayingSection = Array.from(document.querySelectorAll('#spotify-main h3')).find(h3 => h3.textContent.includes('Now Playing'));
+                if (nowPlayingSection) {
+                    const container = nowPlayingSection.parentElement;
+                    
+                    let nowPlayingHTML = '';
+                    if (nowPlaying && nowPlaying.item) {
+                        const explicitIcon = nowPlaying.item.explicit ? ' 🅴' : '';
+                        nowPlayingHTML = `<p><strong>Track:</strong> ${nowPlaying.item.name}${explicitIcon}</p>
+                            <p><strong>Artist:</strong> ${nowPlaying.item.artists.map(a=>a.name).join(', ')}</p>
+                            <p><strong>Album:</strong> ${nowPlaying.item.album.name}</p>
+                            <p style="color:#1db954;"><strong>Playing:</strong> ${nowPlaying.is_playing ? '▶️ Yes' : '⏸️ Paused'}</p>`;
+                    } else {
+                        nowPlayingHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;">
+                            <span style="font-size:2rem;margin-bottom:8px;">🎵</span>
+                            <span style="color:#b3b3b3;font-style:italic;">No music currently playing</span>
+                        </div>`;
+                    }
+                    
+                    // Update the content after the h3
+                    const existingContent = container.querySelector('p, div[style*="display:flex"]');
+                    if (existingContent) {
+                        existingContent.outerHTML = nowPlayingHTML;
+                    } else {
+                        container.insertAdjacentHTML('beforeend', nowPlayingHTML);
+                    }
+                    
+                    console.log('🎵 Currently playing updated');
+                }
+            } catch (error) {
+                console.error('Error updating currently playing:', error);
+            }
         }
 
         function showSpotifyLibrary() {
@@ -3810,9 +3886,13 @@
                 <p style="color:#1db954;"><strong>Subscription:</strong> ${profile.product || 'N/A'}</p>
             </div>
             <div style="flex:2;min-width:220px;background:#1c253b;padding:1.5rem;border-radius:20px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
-                <h3 style="font-size:1.1rem;font-weight:600;margin-bottom:1rem;">Now Playing</h3>`;
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                    <h3 style="font-size:1.1rem;font-weight:600;margin:0;">Now Playing</h3>
+                    <button onclick="updateCurrentlyPlaying()" style="background:none;border:1px solid #1db954;color:#1db954;border-radius:4px;padding:4px 8px;font-size:0.8rem;cursor:pointer;" title="Refresh now playing">🔄</button>
+                </div>`;
         if (nowPlaying && nowPlaying.item) {
-            html += `<p><strong>Track:</strong> ${nowPlaying.item.name}</p>
+            const explicitIcon = nowPlaying.item.explicit ? ' 🅴' : '';
+            html += `<p><strong>Track:</strong> ${nowPlaying.item.name}${explicitIcon}</p>
                 <p><strong>Artist:</strong> ${nowPlaying.item.artists.map(a=>a.name).join(', ')}</p>
                 <p><strong>Album:</strong> ${nowPlaying.item.album.name}</p>
                 <p style="color:#1db954;"><strong>Playing:</strong> ${nowPlaying.is_playing ? '▶️ Yes' : '⏸️ Paused'}</p>`;
@@ -3859,7 +3939,7 @@
         if (playlists.items && playlists.items.length > 0) {
             html += '<div style="max-height:400px;overflow-y:auto;">';
             playlists.items.forEach((pl, i) => {
-                const artwork = pl.images[0]?.url || '';
+                const artwork = pl.images && pl.images.length > 0 ? pl.images[0].url : '';
                 html += `
                     <div class="track-item" onclick="showSpotifyPlaylistApp('${pl.id}','${pl.name.replace(/'/g, "&#39;")}')" style="cursor:pointer;">
                         ${artwork ? `<img src="${artwork}" class="track-artwork">` : '<div class="track-artwork" style="background:#333;display:flex;align-items:center;justify-content:center;">📚</div>'}
@@ -3906,28 +3986,43 @@
         }
         const data = await response.json();
         console.log('Playlists loaded:', data.items?.length);
+        console.log('Sample playlist data:', data.items?.[0]); // Debug first playlist
         if (!data.items || data.items.length === 0) {
             listDiv.innerHTML = '<p>No playlists found.</p>';
             return;
         }
         let html = '<div class="playlist-grid">';
-        data.items.forEach(pl => {
-            const artwork = pl.images[0]?.url || '';
-            html += `
-                <div class="playlist-card" onclick="showSpotifyPlaylistApp('${pl.id}','${pl.name.replace(/'/g, "&#39;")}')">
-                    ${artwork ? 
-                        `<img src="${artwork}" class="playlist-artwork">` : 
-                        '<div class="no-image">📚</div>'
-                    }
-                    <div class="playlist-name">${pl.name}</div>
-                    <div class="playlist-tracks">${pl.tracks.total} tracks</div>
-                    <div style="display:flex;flex-direction:column;gap:0.5rem;margin-top:0.5rem;">
-                        <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); playEntirePlaylist('${pl.id}')" title="Play first song and queue the rest">▶️ Play</button>
-                        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); addPlaylistToQueue('${pl.id}', false)" style="min-width: 60px;">Queue</button>
-                        <button class="btn btn-warning btn-sm" onclick="event.stopPropagation(); addPlaylistToQueue('${pl.id}', true)" style="min-width: 80px;">Play Next</button>
+        data.items.forEach((pl, index) => {
+            try {
+                if (!pl || !pl.id) {
+                    console.warn('Skipping invalid playlist at index:', index, pl);
+                    return;
+                }
+                
+                const artwork = pl.images && pl.images.length > 0 ? pl.images[0].url : '';
+                const trackCount = pl.tracks && pl.tracks.total ? pl.tracks.total : 0;
+                const playlistName = pl.name || 'Unnamed Playlist';
+                const playlistId = pl.id;
+                
+                html += `
+                    <div class="playlist-card" onclick="showSpotifyPlaylistApp('${playlistId}','${playlistName.replace(/'/g, "&#39;")}')">
+                        ${artwork ? 
+                            `<img src="${artwork}" class="playlist-artwork">` : 
+                            '<div class="no-image">📚</div>'
+                        }
+                        <div class="playlist-name">${playlistName}</div>
+                        <div class="playlist-tracks">${trackCount} tracks</div>
+                        <div style="display:flex;flex-direction:column;gap:0.5rem;margin-top:0.5rem;">
+                            <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); playEntirePlaylist('${playlistId}')" title="Play first song and queue the rest">▶️ Play</button>
+                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); addPlaylistToQueue('${playlistId}', false)" style="min-width: 60px;">Queue</button>
+                            <button class="btn btn-warning btn-sm" onclick="event.stopPropagation(); addPlaylistToQueue('${playlistId}', true)" style="min-width: 80px;">Play Next</button>
+                        </div>
                     </div>
-                </div>
-            `;
+                `;
+            } catch (error) {
+                console.error('Error processing playlist at index:', index, error, pl);
+                // Continue with next playlist instead of breaking the entire list
+            }
         });
         html += '</div>';
         listDiv.innerHTML = html;
@@ -4771,7 +4866,7 @@
     const albumart = document.getElementById('spotify-player-albumart');
     const trackinfo = document.getElementById('spotify-player-trackinfo');
     const artistinfo = document.getElementById('spotify-player-artistinfo');
-    if (spotifyCurrentTrack.album.images[0]) {
+    if (spotifyCurrentTrack.album && spotifyCurrentTrack.album.images && spotifyCurrentTrack.album.images.length > 0) {
         albumart.src = spotifyCurrentTrack.album.images[0].url;
         albumart.style.display = 'block';
     } else {
@@ -4892,7 +4987,7 @@
                     data.albums.items.forEach(al => {
                         const explicitIcon = al.explicit ? ' 🅴' : '';
                         albumsHtml += `<div class="track-item" onclick="showSpotifyAlbumApp('${al.id}', '${al.name.replace(/'/g, "&#39;")}')" style="cursor: pointer;">
-                            <img src="${al.images[0]?.url || ''}" class="track-artwork">
+                            <img src="${al.images && al.images.length > 0 ? al.images[0].url : ''}" class="track-artwork">
                             <div class="track-info">
                                 <div class="track-name">${al.name}${explicitIcon}</div>
                                 <div class="track-artist">${al.artists.map(a=>a.name).join(', ')}</div>
@@ -4912,7 +5007,7 @@
                 if (data.artists && data.artists.items.length > 0) {
                     data.artists.items.forEach(a => {
                         artistsHtml += `<div class="track-item" onclick="showSpotifyArtistApp('${a.id}', '${a.name.replace(/'/g, "&#39;")}')" style="cursor: pointer;">
-                            <img src="${a.images[0]?.url || ''}" class="track-artwork">
+                            <img src="${a.images && a.images.length > 0 ? a.images[0].url : ''}" class="track-artwork">
                             <div class="track-info">
                                 <div class="track-name">${a.name}</div>
                                 <div class="track-artist">${formatNumber(a.followers?.total || 0)} followers</div>
