@@ -918,6 +918,27 @@
             color: white !important;
         }
 
+        /* Search tab styles */
+        .search-tab-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .search-tab-btn.active {
+            background: #1db954 !important;
+            color: white !important;
+        }
+
+        .search-tab-content {
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
         /* Public lobbies styles */
         .public-lobby-item {
             background: rgba(52, 73, 94, 0.8);
@@ -1085,10 +1106,25 @@
                                 // Render search UI
                                 main.innerHTML = `<h2>🔍 Search Spotify</h2>
                                     <div style='margin-bottom:1rem;'>
-                                        <input id='spotify-app-search-input' type='text' placeholder='Search tracks, artists, albums...' style='width:60%;padding:10px;font-size:1rem;border-radius:8px;border:none;background:#232b3e;color:white;'>
+                                        <input id='spotify-app-search-input' type='text' placeholder='Search tracks, artists, albums...' style='width:60%;padding:10px;font-size:1rem;border-radius:8px;border:none;background:#232b3e;color:white;' onkeypress='handleSearchKeyPress(event)'>
                                         <button class='btn btn-primary' onclick='searchSpotifyApp()'>Search</button>
                                     </div>
+                                    <div id='spotify-search-tabs' style='display:none;'>
+                                        <div class='search-tab-buttons' style='display:flex;gap:0.5rem;margin-bottom:1rem;'>
+                                            <button class='btn btn-info search-tab-btn active' data-search-tab='tracks' onclick='showSearchTab("tracks")'>🎵 Songs</button>
+                                            <button class='btn btn-info search-tab-btn' data-search-tab='albums' onclick='showSearchTab("albums")'>💿 Albums</button>
+                                            <button class='btn btn-info search-tab-btn' data-search-tab='artists' onclick='showSearchTab("artists")'>🎤 Artists</button>
+                                        </div>
+                                        <div id='search-tab-tracks' class='search-tab-content active'></div>
+                                        <div id='search-tab-albums' class='search-tab-content' style='display:none;'></div>
+                                        <div id='search-tab-artists' class='search-tab-content' style='display:none;'></div>
+                                    </div>
                                     <div id='spotify-app-search-results'></div>`;
+                                // Add focus to search input
+                                setTimeout(() => {
+                                    const searchInput = document.getElementById('spotify-app-search-input');
+                                    if (searchInput) searchInput.focus();
+                                }, 100);
                             }
                         }
                         document.addEventListener('DOMContentLoaded', function() {
@@ -1559,6 +1595,10 @@
 
         // NEW: Game selection function
         function selectGame(gameType) {
+            console.log('🎮 selectGame called with:', gameType);
+            console.log('🎮 Previous currentGameType:', currentGameType);
+            console.log('🎮 Current room before selection:', currentRoom);
+            
             const globalName = document.getElementById('global-player-name').value.trim();
             const nameError = document.getElementById('name-error');
             if (!globalName) {
@@ -1573,6 +1613,7 @@
                 nameError.style.display = 'none';
             }
             currentGameType = gameType;
+            console.log('🎮 New currentGameType set to:', currentGameType);
             document.getElementById('player-name').value = globalName;
             
             // Update UI based on game type
@@ -1813,24 +1854,75 @@
 
         // Bot management functions (only for The Mole)
         function addBot() {
+            console.log('🤖 AddBot function called');
+            console.log('🤖 isHost:', isHost);
+            console.log('🤖 currentGameType:', currentGameType);
+            console.log('🤖 gameState:', gameState);
+            
             if (!isHost) {
+                console.log('🤖 ERROR: Not host');
                 showError('Only the host can add bots');
                 return;
             }
             
             const totalPlayers = document.querySelectorAll('.player-card').length;
+            console.log('🤖 Total players found:', totalPlayers);
+            console.log('🤖 Player cards:', document.querySelectorAll('.player-card'));
             
             if (totalPlayers >= 8) {
+                console.log('🤖 ERROR: Room full');
                 showError('Room is full (8/8 players)');
                 return;
             }
             
+            console.log('🤖 usingCustomLocations:', usingCustomLocations);
             if (usingCustomLocations) {
+                console.log('🤖 ERROR: Custom locations enabled');
                 showError('Cannot add bots when using custom locations');
                 return;
             }
             
-            socket.emit('add_bot', { difficulty: 'medium' });
+            console.log('🤖 About to emit add_bot event');
+            console.log('🤖 Socket connected:', socket.connected);
+            console.log('🤖 Current room when emitting:', currentRoom);
+            
+            // Add a timeout to detect if server doesn't respond
+            const botAddTimeout = setTimeout(() => {
+                console.log('🤖 ERROR: No response from server after 5 seconds');
+                showError('Server did not respond to bot addition request');
+            }, 5000);
+            
+            // Store timeout ID so we can clear it if we get a response
+            window.lastBotAddTimeout = botAddTimeout;
+            
+            // First, let's check what events the server is listening for
+            console.log('🤖 Socket.io listeners:', socket.listeners());
+            
+            const botData = { 
+                difficulty: 'medium',
+                room: currentRoom,
+                gameType: currentGameType
+            };
+            console.log('🤖 Emitting bot data:', botData);
+            
+            // First try to update the room's game type (in case server is out of sync)
+            console.log('🤖 Attempting to sync room game type with server');
+            socket.emit('update_room_game_type', { 
+                room: currentRoom, 
+                gameType: currentGameType 
+            });
+            
+            socket.emit('add_bot', botData);
+            console.log('🤖 add_bot event emitted with room:', currentRoom);
+            
+            // Also try the acknowledgment callback version
+            socket.emit('add_bot', botData, (response) => {
+                console.log('🤖 Server acknowledgment received:', response);
+                if (window.lastBotAddTimeout) {
+                    clearTimeout(window.lastBotAddTimeout);
+                    window.lastBotAddTimeout = null;
+                }
+            });
         }
 
         function removeBot(botId) {
@@ -1856,16 +1948,25 @@
         }
 
         function updateBotControls() {
+            console.log('🤖 updateBotControls called');
+            console.log('🤖 currentGameType:', currentGameType);
+            console.log('🤖 isHost:', isHost);
+            console.log('🤖 currentRoom:', currentRoom);
+            console.log('🤖 botCount:', botCount);
+            
             const botControls = document.getElementById('bot-controls');
+            console.log('🤖 botControls element:', botControls);
             
             // Only show bot controls for The Mole game
             if (currentGameType !== 'mole' || !isHost) {
-                botControls.style.display = 'none';
+                console.log('🤖 Hiding bot controls - not mole game or not host');
+                if (botControls) botControls.style.display = 'none';
                 return;
             }
             
             // Safety check: reset bot count if no active room
             if (!currentRoom) {
+                console.log('🤖 No active room, resetting bot count');
                 botCount = 0;
             }
             
@@ -1874,14 +1975,23 @@
             const removeAllBotsBtn = document.getElementById('remove-all-bots-btn');
             const botWarning = document.getElementById('bot-warning');
             
-            botControls.style.display = 'block';
-            botCountSpan.textContent = botCount;
+            console.log('🤖 Bot control elements:', {
+                botCountSpan, addBotBtn, removeAllBotsBtn, botWarning
+            });
+            
+            if (botControls) botControls.style.display = 'block';
+            if (botCountSpan) botCountSpan.textContent = botCount;
             
             const totalPlayers = document.querySelectorAll('.player-card').length;
+            console.log('🤖 Total players in updateBotControls:', totalPlayers);
             
             const canAddBot = totalPlayers < 8 && !usingCustomLocations;
-            addBotBtn.style.display = 'inline-block';
-            addBotBtn.disabled = !canAddBot;
+            console.log('🤖 canAddBot:', canAddBot);
+            
+            if (addBotBtn) {
+                addBotBtn.style.display = 'inline-block';
+                addBotBtn.disabled = !canAddBot;
+            }
             
             if (totalPlayers >= 8) {
                 addBotBtn.textContent = '🤖 Room Full (8/8)';
@@ -2384,9 +2494,19 @@
 
         // Bot event handlers (The Mole only)
         socket.on('bot_added', (data) => {
+            console.log('🤖 bot_added event received:', data);
+            
+            // Clear the timeout since we got a response
+            if (window.lastBotAddTimeout) {
+                clearTimeout(window.lastBotAddTimeout);
+                window.lastBotAddTimeout = null;
+            }
+            
             showSuccess(`Bot ${data.botName} added to the room`);
             botCount = data.botCount;
+            console.log('🤖 New bot count:', botCount);
             updateBotControls();
+            console.log('🤖 Bot controls updated');
         });
 
         socket.on('bot_removed', (data) => {
@@ -2400,6 +2520,18 @@
             showInfo(data.message);
             botCount = 0;
             updateBotControls();
+        });
+
+        socket.on('bot_error', (data) => {
+            console.log('🤖 bot_error event received:', data);
+            
+            // Clear the timeout since we got a response (even if error)
+            if (window.lastBotAddTimeout) {
+                clearTimeout(window.lastBotAddTimeout);
+                window.lastBotAddTimeout = null;
+            }
+            
+            showError(`Bot error: ${data.message || 'Unknown error'}`);
         });
 
         socket.on('player_kicked', (data) => {
@@ -3486,7 +3618,9 @@
                 if (spotifyCurrentTrack && newTrack && spotifyCurrentTrack.id !== newTrack.id) {
                     // Reset auto-advance flag for new track
                     hasAutoAdvanced = false;
-                    console.log('New track detected, reset auto-advance flag');
+                    console.log('🎵 New track detected:', newTrack.name, 'by', newTrack.artists[0]?.name);
+                    console.log('🎵 Reset auto-advance flag. Queue enabled:', spotifyQueueEnabled);
+                    console.log('🎵 Current queue index:', spotifyQueueIndex, '/', spotifyCustomQueue.length);
                 }
                 
                 spotifyCurrentTrack = newTrack;
@@ -3632,7 +3766,7 @@
                 <p><strong>Name:</strong> ${profile.display_name || 'N/A'}</p>
                 <p><strong>Email:</strong> <span style="word-break:break-all;word-wrap:break-word;">${profile.email || 'N/A'}</span></p>
                 <p><strong>Country:</strong> ${profile.country || 'N/A'}</p>
-                <p><strong>Followers:</strong> ${profile.followers?.total || 0}</p>
+                <p><strong>Followers:</strong> ${formatNumber(profile.followers?.total || 0)}</p>
                 <p style="color:#1db954;"><strong>Subscription:</strong> ${profile.product || 'N/A'}</p>
             </div>
             <div style="flex:2;min-width:220px;background:#1c253b;padding:1.5rem;border-radius:20px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
@@ -3663,7 +3797,7 @@
                     <div class="track-item">
                         ${artwork ? `<img src="${artwork}" class="track-artwork">` : '<div class="track-artwork" style="background:#333;display:flex;align-items:center;justify-content:center;">🎵</div>'}
                         <div class="track-info">
-                            <div class="track-name">${i+1}. ${track.name}</div>
+                            <div class="track-name">${i+1}. ${track.name}${track.explicit ? ' 🅴' : ''}</div>
                             <div class="track-artist">by ${track.artists.map(a=>a.name).join(', ')}</div>
                         </div>
                         <div class="track-actions">
@@ -3694,7 +3828,9 @@
                             <div class="track-artist">🎵 ${pl.tracks.total} tracks • By ${pl.owner.display_name}</div>
                         </div>
                         <div class="track-actions">
-                            <button class="btn btn-primary" onclick="event.stopPropagation(); playSpotifyPlaylistId('${pl.id}')" ${!spotifyIsPremium || !spotifyPlayerReady ? 'disabled' : ''}>▶️ Play</button>
+                            <button class="btn btn-primary" onclick="event.stopPropagation(); playEntirePlaylist('${pl.id}')" title="Play first song and queue the rest">▶️ Play</button>
+                            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); addPlaylistToQueue('${pl.id}', false)" style="min-width: 60px;">Queue</button>
+                            <button class="btn btn-warning btn-sm" onclick="event.stopPropagation(); addPlaylistToQueue('${pl.id}', true)" style="min-width: 80px;">Play Next</button>
                         </div>
                     </div>
                 `;
@@ -3745,7 +3881,11 @@
                     }
                     <div class="playlist-name">${pl.name}</div>
                     <div class="playlist-tracks">${pl.tracks.total} tracks</div>
-                    <button class="btn btn-primary" onclick="event.stopPropagation(); playSpotifyPlaylistId('${pl.id}')" style="margin-top:0.5rem;" ${!spotifyIsPremium || !spotifyPlayerReady ? 'disabled' : ''}>▶️ Play Playlist</button>
+                    <div style="display:flex;flex-direction:column;gap:0.5rem;margin-top:0.5rem;">
+                        <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); playEntirePlaylist('${pl.id}')" title="Play first song and queue the rest">▶️ Play</button>
+                        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); addPlaylistToQueue('${pl.id}', false)" style="min-width: 60px;">Queue</button>
+                        <button class="btn btn-warning btn-sm" onclick="event.stopPropagation(); addPlaylistToQueue('${pl.id}', true)" style="min-width: 80px;">Play Next</button>
+                    </div>
                 </div>
             `;
         });
@@ -3810,7 +3950,7 @@
                     }
                     <div style="width:30px;text-align:center;opacity:0.7;">${index + 1}</div>
                     <div class="track-info">
-                        <div class="track-name">${track.name}</div>
+                        <div class="track-name">${track.name}${track.explicit ? ' 🅴' : ''}</div>
                         <div class="track-artist">by ${track.artists?.map(a=>a.name).join(', ') || 'Unknown Artist'}</div>
                     </div>
                     <div class="track-actions">
@@ -3969,6 +4109,9 @@
 
         // Custom Queue Management Functions
         function createCustomQueue(tracks, source, startIndex = 0, shuffle = false) {
+            console.log('🎵 Creating custom queue with:', tracks.length, 'tracks from', source);
+            console.log('🎵 Start index:', startIndex, 'Shuffle:', shuffle);
+            
             spotifyOriginalList = [...tracks];
             spotifyCurrentSource = source;
             
@@ -3991,7 +4134,8 @@
             }
             
             spotifyQueueEnabled = true;
-            console.log(`Custom queue created with ${spotifyCustomQueue.length} tracks from ${source}`);
+            console.log(`✅ Custom queue created with ${spotifyCustomQueue.length} tracks from ${source}`);
+            console.log('🎵 Queue enabled:', spotifyQueueEnabled, 'Current index:', spotifyQueueIndex);
         }
 
         function addToCustomQueue(track, playNext = false) {
@@ -4015,10 +4159,19 @@
         }
 
         function playFromCustomQueue(trackIndex) {
-            if (!spotifyCustomQueue.length || trackIndex >= spotifyCustomQueue.length) return;
+            console.log('🎵 playFromCustomQueue called with index:', trackIndex);
+            console.log('🎵 Current custom queue:', spotifyCustomQueue);
+            console.log('🎵 Queue enabled:', spotifyQueueEnabled);
+            
+            if (!spotifyCustomQueue.length || trackIndex >= spotifyCustomQueue.length) {
+                console.log('❌ No queue or invalid index');
+                return;
+            }
             
             spotifyQueueIndex = trackIndex;
             const track = spotifyCustomQueue[trackIndex];
+            
+            console.log('🎵 Playing track from queue:', track?.name, 'by', track?.artists?.[0]?.name);
             
             if (track && track.id) {
                 playSpotifyTrackId(track.id);
@@ -4026,18 +4179,25 @@
         }
 
         function customSpotifyNext() {
+            console.log('🎵 customSpotifyNext called');
+            console.log('🎵 Queue enabled:', spotifyQueueEnabled, 'Queue length:', spotifyCustomQueue.length);
+            console.log('🎵 Current index:', spotifyQueueIndex);
+            
             if (spotifyQueueEnabled && spotifyCustomQueue.length > 0) {
                 if (spotifyQueueIndex < spotifyCustomQueue.length - 1) {
                     spotifyQueueIndex++;
+                    console.log('🎵 Advancing to next track, new index:', spotifyQueueIndex);
                     playFromCustomQueue(spotifyQueueIndex);
                     return true;
                 } else {
                     // End of queue - disable custom queue
+                    console.log('🎵 End of queue reached');
                     spotifyQueueEnabled = false;
                     showError('End of queue reached');
                     return false;
                 }
             }
+            console.log('🎵 Custom queue not active, falling back to Spotify');
             return false;
         }
 
@@ -4116,6 +4276,415 @@
             
             const track = window.currentTopTracks[trackIndex];
             addToCustomQueue(track, playNext);
+        }
+
+        // Search track queue function
+        async function addSearchTrackToQueue(trackId, playNext = false) {
+            try {
+                const response = await fetch(`https://api.spotify.com/v1/tracks/${trackId}`, {
+                    headers: { 'Authorization': 'Bearer ' + spotifyAccessToken }
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                const track = await response.json();
+                addToCustomQueue(track, playNext);
+            } catch (error) {
+                console.error('Error fetching track for queue:', error);
+                showError('Failed to add track to queue');
+            }
+        }
+
+        // Play entire playlist function - plays first song and queues the rest
+        async function playEntirePlaylist(playlistId) {
+            try {
+                const response = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`, {
+                    headers: { 'Authorization': 'Bearer ' + spotifyAccessToken }
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                const data = await response.json();
+                const tracks = data.items.filter(item => item.track).map(item => item.track);
+                
+                if (tracks.length === 0) {
+                    showError('No tracks found in playlist');
+                    return;
+                }
+                
+                // Create custom queue with entire playlist and start from first track
+                createCustomQueue(tracks, `playlist-${playlistId}`, 0, false);
+                playFromCustomQueue(0);
+                
+                showSuccess(`Playing playlist! (${tracks.length} tracks queued)`);
+            } catch (error) {
+                console.error('Error playing playlist:', error);
+                showError('Failed to play playlist');
+            }
+        }
+
+        // Playlist queue function
+        async function addPlaylistToQueue(playlistId, playNext = false) {
+            try {
+                const response = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`, {
+                    headers: { 'Authorization': 'Bearer ' + spotifyAccessToken }
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                const data = await response.json();
+                const tracks = data.items.filter(item => item.track).map(item => item.track);
+                
+                if (tracks.length === 0) {
+                    showError('No tracks found in playlist');
+                    return;
+                }
+                
+                if (playNext) {
+                    // Add all tracks to play next (reverse order so first track plays first)
+                    for (let i = tracks.length - 1; i >= 0; i--) {
+                        addToCustomQueue(tracks[i], true);
+                    }
+                    showSuccess(`Playlist queued to play next! (${tracks.length} tracks)`);
+                } else {
+                    // Add all tracks to end of queue
+                    tracks.forEach(track => addToCustomQueue(track, false));
+                    showSuccess(`Playlist added to queue! (${tracks.length} tracks)`);
+                }
+            } catch (error) {
+                console.error('Error fetching playlist for queue:', error);
+                showError('Failed to add playlist to queue');
+            }
+        }
+
+        // Album view function
+        async function showSpotifyAlbumApp(albumId, albumName) {
+            const main = document.getElementById('spotify-main');
+            main.innerHTML = `
+                <div style="display:flex;align-items:center;gap:1rem;margin-bottom:2rem;">
+                    <button class="btn btn-secondary" onclick="activateSpotifyTab('search')">← Back to Search</button>
+                    <h2>💿 ${albumName}</h2>
+                </div>
+                <div id="spotify-app-album-tracks"><span class="loading-spinner"></span> Loading album...</div>
+            `;
+            
+            try {
+                console.log('Loading album tracks for:', albumId);
+                const response = await fetch(`https://api.spotify.com/v1/albums/${albumId}/tracks?limit=50`, {
+                    headers: { 'Authorization': 'Bearer ' + spotifyAccessToken }
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                
+                // Also get album info for artwork
+                const albumResponse = await fetch(`https://api.spotify.com/v1/albums/${albumId}`, {
+                    headers: { 'Authorization': 'Bearer ' + spotifyAccessToken }
+                });
+                const albumInfo = albumResponse.ok ? await albumResponse.json() : null;
+                
+                console.log('Album tracks loaded:', data.items?.length);
+                const tracksDiv = document.getElementById('spotify-app-album-tracks');
+                
+                if (!data.items || data.items.length === 0) {
+                    tracksDiv.innerHTML = '<p>No tracks found in this album.</p>';
+                    return;
+                }
+                
+                // Store album tracks for custom queue
+                window.currentAlbumTracks = data.items;
+                window.currentAlbumId = albumId;
+                
+                let html = `
+                    <div style="margin-bottom:1rem;">
+                        <button class="btn btn-primary" onclick="playSpotifyAlbum('${albumId}')" ${!spotifyIsPremium || !spotifyPlayerReady ? 'disabled' : ''}>▶️ Play Album</button>
+                        <button class="btn btn-info" onclick="playCustomAlbumShuffle('${albumId}')" title="Play with shuffled queue">🔀 Shuffle Album</button>
+                        <button class="btn btn-secondary" onclick="addAlbumToQueue('${albumId}', false)" style="min-width: 80px;">Queue Album</button>
+                    </div>
+                    <div style="max-height:60vh;overflow-y:auto;">
+                `;
+                
+                data.items.forEach((track, index) => {
+                    const artwork = albumInfo?.images?.[0]?.url || '';
+                    html += `
+                        <div class="track-item">
+                            ${artwork ? 
+                                `<img src="${artwork}" class="track-artwork">` : 
+                                '<div class="track-artwork" style="background:#333;display:flex;align-items:center;justify-content:center;">🎵</div>'
+                            }
+                            <div style="width:30px;text-align:center;opacity:0.7;">${index + 1}</div>
+                            <div class="track-info">
+                                <div class="track-name">${track.name}${track.explicit ? ' 🅴' : ''}</div>
+                                <div class="track-artist">by ${track.artists?.map(a=>a.name).join(', ') || 'Unknown Artist'}</div>
+                            </div>
+                            <div class="track-actions">
+                                <button class="btn btn-primary" onclick="playFromAlbum(${index})">▶️ Play</button>
+                                <button class="btn btn-secondary" onclick="addToQueueFromAlbum(${index}, false)" style="min-width: 60px;">Queue</button>
+                                <button class="btn btn-warning" onclick="addToQueueFromAlbum(${index}, true)" style="min-width: 80px;">Play Next</button>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                tracksDiv.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading album tracks:', error);
+                const tracksDiv = document.getElementById('spotify-app-album-tracks');
+                if (tracksDiv) {
+                    tracksDiv.innerHTML = '<p style="color:#ff6b6b;">❌ Failed to load album tracks. Please try again.</p>';
+                }
+                showError('Failed to load album: ' + error.message);
+            }
+        }
+
+        // Album-specific queue functions
+        function playFromAlbum(trackIndex) {
+            if (!window.currentAlbumTracks || !window.currentAlbumTracks[trackIndex]) {
+                showError('Track not found in album');
+                return;
+            }
+            
+            const tracks = window.currentAlbumTracks;
+            createCustomQueue(tracks, `album-${window.currentAlbumId}`, trackIndex, false);
+            playFromCustomQueue(trackIndex);
+        }
+
+        function playCustomAlbumShuffle(albumId) {
+            if (!window.currentAlbumTracks || window.currentAlbumTracks.length === 0) {
+                showError('No tracks found in album');
+                return;
+            }
+            
+            const tracks = window.currentAlbumTracks;
+            // Start with a random track instead of always the first one
+            const randomStartIndex = Math.floor(Math.random() * tracks.length);
+            createCustomQueue(tracks, `album-${albumId}`, randomStartIndex, true);
+            playFromCustomQueue(0); // Play the first track in the shuffled queue
+        }
+
+        function addToQueueFromAlbum(trackIndex, playNext = false) {
+            if (!window.currentAlbumTracks || !window.currentAlbumTracks[trackIndex]) {
+                showError('Track not found in album');
+                return;
+            }
+            
+            const track = window.currentAlbumTracks[trackIndex];
+            addToCustomQueue(track, playNext);
+        }
+
+        // Album queue function
+        async function addAlbumToQueue(albumId, playNext = false) {
+            try {
+                const response = await fetch(`https://api.spotify.com/v1/albums/${albumId}/tracks?limit=50`, {
+                    headers: { 'Authorization': 'Bearer ' + spotifyAccessToken }
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                const data = await response.json();
+                const tracks = data.items;
+                
+                if (tracks.length === 0) {
+                    showError('No tracks found in album');
+                    return;
+                }
+                
+                if (playNext) {
+                    // Add all tracks to play next (reverse order so first track plays first)
+                    for (let i = tracks.length - 1; i >= 0; i--) {
+                        addToCustomQueue(tracks[i], true);
+                    }
+                    showSuccess(`Album queued to play next! (${tracks.length} tracks)`);
+                } else {
+                    // Add all tracks to end of queue
+                    tracks.forEach(track => addToCustomQueue(track, false));
+                    showSuccess(`Album added to queue! (${tracks.length} tracks)`);
+                }
+            } catch (error) {
+                console.error('Error fetching album for queue:', error);
+                showError('Failed to add album to queue');
+            }
+        }
+
+        // Artist view function
+        async function showSpotifyArtistApp(artistId, artistName) {
+            const main = document.getElementById('spotify-main');
+            main.innerHTML = `
+                <div style="display:flex;align-items:center;gap:1rem;margin-bottom:2rem;">
+                    <button class="btn btn-secondary" onclick="activateSpotifyTab('search')">← Back to Search</button>
+                    <h2>🎤 ${artistName}</h2>
+                </div>
+                <div id="spotify-app-artist-content"><span class="loading-spinner"></span> Loading artist...</div>
+            `;
+            
+            try {
+                console.log('Loading artist content for:', artistId);
+                
+                // Fetch artist's top tracks and albums
+                const [topTracksResponse, albumsResponse] = await Promise.all([
+                    fetch(`https://api.spotify.com/v1/artists/${artistId}/top-tracks?market=US`, {
+                        headers: { 'Authorization': 'Bearer ' + spotifyAccessToken }
+                    }),
+                    fetch(`https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album,single&market=US&limit=20`, {
+                        headers: { 'Authorization': 'Bearer ' + spotifyAccessToken }
+                    })
+                ]);
+                
+                if (!topTracksResponse.ok || !albumsResponse.ok) {
+                    throw new Error('Failed to fetch artist data');
+                }
+                
+                const topTracksData = await topTracksResponse.json();
+                const albumsData = await albumsResponse.json();
+                
+                // Store artist tracks for custom queue
+                window.currentArtistTracks = topTracksData.tracks || [];
+                window.currentArtistId = artistId;
+                
+                console.log('Artist data loaded - tracks:', topTracksData.tracks?.length, 'albums:', albumsData.items?.length);
+                const contentDiv = document.getElementById('spotify-app-artist-content');
+                
+                let html = '';
+                
+                // Top Tracks Section
+                if (topTracksData.tracks && topTracksData.tracks.length > 0) {
+                    html += `
+                        <div style="background:#1e2a45;padding:1.5rem;border-radius:20px;box-shadow:0 4px 20px rgba(0,0,0,0.2);margin-bottom:2rem;">
+                            <h3 style="font-size:1.1rem;font-weight:600;margin-bottom:1rem;">🎵 Top Tracks</h3>
+                            <div style="margin-bottom:1rem;">
+                                <button class="btn btn-primary" onclick="playFromArtistTracks(0)">▶️ Play Top Tracks</button>
+                                <button class="btn btn-info" onclick="playArtistTracksShuffled()" title="Play with shuffled queue">🔀 Shuffle Top Tracks</button>
+                            </div>
+                            <div style="max-height:400px;overflow-y:auto;">
+                    `;
+                    
+                    topTracksData.tracks.forEach((track, i) => {
+                        const artwork = track.album?.images?.[0]?.url || '';
+                        html += `
+                            <div class="track-item">
+                                ${artwork ? `<img src="${artwork}" class="track-artwork">` : '<div class="track-artwork" style="background:#333;display:flex;align-items:center;justify-content:center;">🎵</div>'}
+                                <div class="track-info">
+                                    <div class="track-name">${i+1}. ${track.name}${track.explicit ? ' 🅴' : ''}</div>
+                                    <div class="track-artist">from ${track.album?.name || 'Unknown Album'}</div>
+                                </div>
+                                <div class="track-actions">
+                                    <button class="btn btn-primary btn-sm" onclick="playFromArtistTracks(${i})">▶️ Play</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="addToQueueFromArtistTracks(${i}, false)" style="min-width: 60px;">Queue</button>
+                                    <button class="btn btn-warning btn-sm" onclick="addToQueueFromArtistTracks(${i}, true)" style="min-width: 80px;">Play Next</button>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    html += '</div></div>';
+                }
+                
+                // Albums Section
+                if (albumsData.items && albumsData.items.length > 0) {
+                    html += `
+                        <div style="background:#1e2a45;padding:1.5rem;border-radius:20px;box-shadow:0 4px 20px rgba(0,0,0,0.2);">
+                            <h3 style="font-size:1.1rem;font-weight:600;margin-bottom:1rem;">💿 Albums & Singles</h3>
+                            <div style="max-height:400px;overflow-y:auto;">
+                    `;
+                    
+                    albumsData.items.forEach((album, i) => {
+                        const artwork = album.images?.[0]?.url || '';
+                        const albumType = album.album_type === 'single' ? 'Single' : 'Album';
+                        html += `
+                            <div class="track-item" onclick="showSpotifyAlbumApp('${album.id}', '${album.name.replace(/'/g, "&#39;")}')" style="cursor: pointer;">
+                                ${artwork ? `<img src="${artwork}" class="track-artwork">` : '<div class="track-artwork" style="background:#333;display:flex;align-items:center;justify-content:center;">💿</div>'}
+                                <div class="track-info">
+                                    <div class="track-name">${album.name}</div>
+                                    <div class="track-artist">${albumType} • ${album.release_date?.split('-')[0] || 'Unknown Year'} • ${album.total_tracks} tracks</div>
+                                </div>
+                                <div class="track-actions">
+                                    <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); playSpotifyAlbum('${album.id}')" ${!spotifyIsPremium || !spotifyPlayerReady ? 'disabled' : ''}>▶️ Play</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); addAlbumToQueue('${album.id}', false)" style="min-width: 60px;">Queue</button>
+                                    <button class="btn btn-warning btn-sm" onclick="event.stopPropagation(); addAlbumToQueue('${album.id}', true)" style="min-width: 80px;">Play Next</button>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    html += '</div></div>';
+                }
+                
+                if (!html) {
+                    html = '<p style="text-align:center;padding:2rem;opacity:0.7;">No tracks or albums found for this artist.</p>';
+                }
+                
+                contentDiv.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading artist content:', error);
+                const contentDiv = document.getElementById('spotify-app-artist-content');
+                if (contentDiv) {
+                    contentDiv.innerHTML = '<p style="color:#ff6b6b;">❌ Failed to load artist content. Please try again.</p>';
+                }
+                showError('Failed to load artist: ' + error.message);
+            }
+        }
+
+        // Artist-specific queue functions
+        function playFromArtistTracks(trackIndex) {
+            if (!window.currentArtistTracks || !window.currentArtistTracks[trackIndex]) {
+                showError('Track not found in artist tracks');
+                return;
+            }
+            
+            const tracks = window.currentArtistTracks;
+            createCustomQueue(tracks, `artist-${window.currentArtistId}`, trackIndex, false);
+            playFromCustomQueue(trackIndex);
+        }
+
+        function playArtistTracksShuffled() {
+            if (!window.currentArtistTracks || window.currentArtistTracks.length === 0) {
+                showError('No tracks found for artist');
+                return;
+            }
+            
+            const tracks = window.currentArtistTracks;
+            // Start with a random track instead of always the first one
+            const randomStartIndex = Math.floor(Math.random() * tracks.length);
+            createCustomQueue(tracks, `artist-${window.currentArtistId}`, randomStartIndex, true);
+            playFromCustomQueue(0); // Play the first track in the shuffled queue
+        }
+
+        function addToQueueFromArtistTracks(trackIndex, playNext = false) {
+            if (!window.currentArtistTracks || !window.currentArtistTracks[trackIndex]) {
+                showError('Track not found in artist tracks');
+                return;
+            }
+            
+            const track = window.currentArtistTracks[trackIndex];
+            addToCustomQueue(track, playNext);
+        }
+
+        // Handle Enter key press in search input
+        function handleSearchKeyPress(event) {
+            if (event.key === 'Enter') {
+                searchSpotifyApp();
+            }
+        }
+
+        // Format large numbers with commas
+        function formatNumber(num) {
+            if (!num) return '0';
+            return num.toLocaleString();
+        }
+
+        // Show specific search tab
+        function showSearchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.search-tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.searchTab === tabName) {
+                    btn.classList.add('active');
+                }
+            });
+
+            // Update tab content
+            document.querySelectorAll('.search-tab-content').forEach(content => {
+                content.style.display = 'none';
+            });
+            const targetTab = document.getElementById(`search-tab-${tabName}`);
+            if (targetTab) {
+                targetTab.style.display = 'block';
+            }
         }
         async function spotifyPlay() {
     if (spotifyIsPremium && spotifyPlayerReady) {
@@ -4218,7 +4787,10 @@
 
         // Add missing searchSpotifyApp function
         function searchSpotifyApp() {
+            console.log('🔍 searchSpotifyApp called');
             const q = document.getElementById('spotify-app-search-input').value.trim();
+            console.log('🔍 Search query:', q);
+            
             if (!q) {
                 showError('Please enter a search term');
                 return;
@@ -4226,7 +4798,10 @@
             const resultsDiv = document.getElementById('spotify-app-search-results');
             resultsDiv.innerHTML = '<div style="text-align:center;padding:2rem;"><span class="loading-spinner"></span> Searching...</div>';
             
-            fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track,artist,album&limit=20`, {
+            const searchUrl = `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track,artist,album&limit=20`;
+            console.log('🔍 Search URL:', searchUrl);
+            
+            fetch(searchUrl, {
                 headers: { 'Authorization': 'Bearer ' + spotifyAccessToken }
             })
             .then(res => {
@@ -4236,54 +4811,90 @@
                 return res.json();
             })
             .then(data => {
-                let html = '';
+                console.log('🔍 Search results:', data);
+                console.log('🔍 Tracks found:', data.tracks?.items?.length);
+                console.log('🔍 Artists found:', data.artists?.items?.length);
+                console.log('🔍 Albums found:', data.albums?.items?.length);
+                
+                // Hide old results and show tabbed interface
+                resultsDiv.innerHTML = '';
+                const tabsContainer = document.getElementById('spotify-search-tabs');
+                if (tabsContainer) {
+                    tabsContainer.style.display = 'block';
+                }
+                
+                // Populate Tracks tab
+                let tracksHtml = '';
                 if (data.tracks && data.tracks.items.length > 0) {
-                    html += '<h4>🎵 Tracks</h4>';
                     data.tracks.items.forEach(t => {
-                        html += `<div class="track-item">
+                        const explicitIcon = t.explicit ? ' 🅴' : '';
+                        tracksHtml += `<div class="track-item">
                             <img src="${t.album.images[0]?.url || ''}" class="track-artwork">
                             <div class="track-info">
-                                <div class="track-name">${t.name}</div>
+                                <div class="track-name">${t.name}${explicitIcon}</div>
                                 <div class="track-artist">${t.artists.map(a=>a.name).join(', ')}</div>
                             </div>
                             <div class="track-actions">
                                 <button class="btn btn-primary" onclick="playSpotifyTrackId('${t.id}')">▶️ Play</button>
-                                <button class="btn btn-secondary" onclick="queueSpotifyTrack('${t.id}')">➕ Queue</button>
+                                <button class="btn btn-secondary" onclick="addSearchTrackToQueue('${t.id}', false)" style="min-width: 60px;">Queue</button>
+                                <button class="btn btn-warning" onclick="addSearchTrackToQueue('${t.id}', true)" style="min-width: 80px;">Play Next</button>
                             </div>
                         </div>`;
                     });
+                } else {
+                    tracksHtml = '<p style="text-align:center;padding:2rem;opacity:0.7;">No tracks found.</p>';
                 }
+                document.getElementById('search-tab-tracks').innerHTML = tracksHtml;
+                
+                // Populate Albums tab
+                let albumsHtml = '';
+                if (data.albums && data.albums.items.length > 0) {
+                    data.albums.items.forEach(al => {
+                        const explicitIcon = al.explicit ? ' 🅴' : '';
+                        albumsHtml += `<div class="track-item" onclick="showSpotifyAlbumApp('${al.id}', '${al.name.replace(/'/g, "&#39;")}')" style="cursor: pointer;">
+                            <img src="${al.images[0]?.url || ''}" class="track-artwork">
+                            <div class="track-info">
+                                <div class="track-name">${al.name}${explicitIcon}</div>
+                                <div class="track-artist">${al.artists.map(a=>a.name).join(', ')}</div>
+                            </div>
+                            <div class="track-actions">
+                                <button class="btn btn-info" onclick="event.stopPropagation(); showSpotifyAlbumApp('${al.id}', '${al.name.replace(/'/g, "&#39;")}')">View Album</button>
+                            </div>
+                        </div>`;
+                    });
+                } else {
+                    albumsHtml = '<p style="text-align:center;padding:2rem;opacity:0.7;">No albums found.</p>';
+                }
+                document.getElementById('search-tab-albums').innerHTML = albumsHtml;
+                
+                // Populate Artists tab
+                let artistsHtml = '';
                 if (data.artists && data.artists.items.length > 0) {
-                    html += '<h4>🎤 Artists</h4>';
                     data.artists.items.forEach(a => {
-                        html += `<div class="track-item">
+                        artistsHtml += `<div class="track-item" onclick="showSpotifyArtistApp('${a.id}', '${a.name.replace(/'/g, "&#39;")}')" style="cursor: pointer;">
                             <img src="${a.images[0]?.url || ''}" class="track-artwork">
                             <div class="track-info">
                                 <div class="track-name">${a.name}</div>
-                                <div class="track-artist">${a.followers?.total || 0} followers</div>
+                                <div class="track-artist">${formatNumber(a.followers?.total || 0)} followers</div>
+                            </div>
+                            <div class="track-actions">
+                                <button class="btn btn-info" onclick="event.stopPropagation(); showSpotifyArtistApp('${a.id}', '${a.name.replace(/'/g, "&#39;")}')">View Artist</button>
                             </div>
                         </div>`;
                     });
+                } else {
+                    artistsHtml = '<p style="text-align:center;padding:2rem;opacity:0.7;">No artists found.</p>';
                 }
-                if (data.albums && data.albums.items.length > 0) {
-                    html += '<h4>💿 Albums</h4>';
-                    data.albums.items.forEach(al => {
-                        html += `<div class="track-item">
-                            <img src="${al.images[0]?.url || ''}" class="track-artwork">
-                            <div class="track-info">
-                                <div class="track-name">${al.name}</div>
-                                <div class="track-artist">${al.artists.map(a=>a.name).join(', ')}</div>
-                            </div>
-                        </div>`;
-                    });
-                }
-                if (!html) html = '<p style="text-align:center;padding:2rem;opacity:0.7;">No results found. Try different search terms.</p>';
-                resultsDiv.innerHTML = html;
+                document.getElementById('search-tab-artists').innerHTML = artistsHtml;
+                
+                // Show the tracks tab by default
+                showSearchTab('tracks');
             })
             .catch(error => {
-                console.error('Spotify search error:', error);
+                console.error('🔍 Spotify search error:', error);
+                console.error('🔍 Error details:', error.message);
                 resultsDiv.innerHTML = '<p style="text-align:center;padding:2rem;color:#ff6b6b;">❌ Search failed. Please try again.</p>';
-                showError('Failed to search Spotify. Please check your connection.');
+                showError('Failed to search Spotify: ' + error.message);
             });
         }
         
