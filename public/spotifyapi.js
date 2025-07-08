@@ -167,6 +167,11 @@ class SpotifyAPI {
     });
   }
 
+  //Recently Played Tracks
+  async getRecentlyPlayed(limit = 20) {
+    return await this.makeRequest('me/player/recently-played', { limit });
+  }
+
   //User Playlists
   async getUserPlaylists(limit = 10) {
     const playlistsData = await this.makeRequest('me/playlists', { limit });
