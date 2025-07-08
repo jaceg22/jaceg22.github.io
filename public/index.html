@@ -4138,19 +4138,28 @@
                 // Strategy 1: Use recently played study songs for recommendations
                 if (recentStudySongs && recentStudySongs.length >= 3) {
                     console.log('🎯 Using recent study songs for recommendations');
-                    const seedTracks = recentStudySongs.slice(0, 5).map(s => s.id).join(',');
-                    const response = await makeSpotifyRequest('recommendations', {
-                        seed_tracks: seedTracks,
-                        limit: 20,
-                        target_acousticness: 0.7,
-                        target_energy: 0.4,
-                        target_valence: 0.5
-                    });
-                    if (response && response.tracks) {
-                        recommendations = response.tracks.map(track => ({
-                            ...track,
-                            recommendation_source: 'recent_study_songs'
-                        }));
+                    const validRecent = recentStudySongs.filter(s => s && s.id);
+                    if (validRecent.length >= 3) {
+                        const seedTracks = validRecent.slice(0, 5).map(s => s.id).join(',');
+                        if (seedTracks) {
+                            const response = await makeSpotifyRequest('recommendations', {
+                                seed_tracks: seedTracks,
+                                limit: 20,
+                                target_acousticness: 0.7,
+                                target_energy: 0.4,
+                                target_valence: 0.5
+                            });
+                            if (response && response.tracks) {
+                                recommendations = response.tracks.map(track => ({
+                                    ...track,
+                                    recommendation_source: 'recent_study_songs'
+                                }));
+                            }
+                        } else {
+                            console.warn('No valid recent study song IDs for recommendations.');
+                        }
+                    } else {
+                        console.warn('Not enough valid recent study songs for recommendations.');
                     }
                 }
                 
@@ -4158,19 +4167,28 @@
                 if (recommendations.length === 0 && studySongs && studySongs.length >= 3) {
                     console.log('🎯 Using all study songs for recommendations');
                     try {
-                        const seedTracks = studySongs.slice(0, 5).map(s => s.id).join(',');
-                        const response = await makeSpotifyRequest('recommendations', {
-                            seed_tracks: seedTracks,
-                            limit: 20,
-                            target_acousticness: 0.7,
-                            target_energy: 0.4,
-                            target_valence: 0.5
-                        });
-                        if (response && response.tracks) {
-                            recommendations = response.tracks.map(track => ({
-                                ...track,
-                                recommendation_source: 'study_songs'
-                            }));
+                        const validStudy = studySongs.filter(s => s && s.id);
+                        if (validStudy.length >= 3) {
+                            const seedTracks = validStudy.slice(0, 5).map(s => s.id).join(',');
+                            if (seedTracks) {
+                                const response = await makeSpotifyRequest('recommendations', {
+                                    seed_tracks: seedTracks,
+                                    limit: 20,
+                                    target_acousticness: 0.7,
+                                    target_energy: 0.4,
+                                    target_valence: 0.5
+                                });
+                                if (response && response.tracks) {
+                                    recommendations = response.tracks.map(track => ({
+                                        ...track,
+                                        recommendation_source: 'study_songs'
+                                    }));
+                                }
+                            } else {
+                                console.warn('No valid study song IDs for recommendations.');
+                            }
+                        } else {
+                            console.warn('Not enough valid study songs for recommendations.');
                         }
                     } catch (error) {
                         console.warn('Failed to get recommendations from study songs:', error);
@@ -4183,19 +4201,23 @@
                     try {
                         const studyGenres = ['lo-fi', 'ambient', 'instrumental-hip-hop', 'chill', 'focus'];
                         const seedGenres = studyGenres.slice(0, 5).join(',');
-                        const response = await makeSpotifyRequest('recommendations', {
-                            seed_genres: seedGenres,
-                            limit: 20,
-                            target_acousticness: 0.8,
-                            target_energy: 0.3,
-                            target_valence: 0.4,
-                            target_instrumentalness: 0.7
-                        });
-                        if (response && response.tracks) {
-                            recommendations = response.tracks.map(track => ({
-                                ...track,
-                                recommendation_source: 'popular_study'
-                            }));
+                        if (seedGenres) {
+                            const response = await makeSpotifyRequest('recommendations', {
+                                seed_genres: seedGenres,
+                                limit: 20,
+                                target_acousticness: 0.8,
+                                target_energy: 0.3,
+                                target_valence: 0.4,
+                                target_instrumentalness: 0.7
+                            });
+                            if (response && response.tracks) {
+                                recommendations = response.tracks.map(track => ({
+                                    ...track,
+                                    recommendation_source: 'popular_study'
+                                }));
+                            }
+                        } else {
+                            console.warn('No valid study genres for recommendations.');
                         }
                     } catch (error) {
                         console.warn('Failed to get recommendations from popular study genres:', error);
@@ -4584,9 +4606,13 @@
                 if (response.ok) {
                     const data = await response.json();
                     if (data.tracks && data.tracks.length > 0) {
-                        // Play first track and queue the rest
-                        await playSpotifyTrack(data.tracks[0].id);
-                        showSuccess(`Playing ${data.tracks[0].name}!`);
+                        const tracks = data.tracks;
+                        
+                        // Create custom queue with artist's top tracks and start from first track
+                        createCustomQueue(tracks, `artist-top-${artistId}`, 0, false);
+                        playFromCustomQueue(0);
+                        
+                        showSuccess(`Playing ${tracks[0].name}! (${tracks.length} tracks queued)`);
                     } else {
                         showError('No tracks found for this artist');
                     }
@@ -4594,6 +4620,7 @@
                     showError('Failed to get artist tracks');
                 }
             } catch (error) {
+                console.error('Error playing artist tracks:', error);
                 showError('Failed to play artist tracks');
             }
         }
